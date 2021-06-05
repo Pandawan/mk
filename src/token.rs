@@ -1,5 +1,6 @@
 use std::fmt;
 
+// TODO: Add some kind of Span to keep track of where each token is in the source (Perhaps a WithSpan<>)
 #[derive(Debug, PartialEq, Clone)]
 pub enum Token {
     // Operators
@@ -44,7 +45,7 @@ pub enum Token {
 
 impl Token {
     /// Get the Token for the given keyword, if valid.
-    pub fn get_keyword(s: &str) -> Option<Token> {
+    pub fn lookup_keyword(s: &str) -> Option<Token> {
         match s {
             "true" => Some(Token::True),
             "false" => Some(Token::False),

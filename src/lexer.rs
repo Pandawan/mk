@@ -74,7 +74,7 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        if let Some(keyword_token) = Token::get_keyword(&identifier) {
+        if let Some(keyword_token) = Token::lookup_keyword(&identifier) {
             keyword_token
         } else {
             Token::Identifier(identifier)
