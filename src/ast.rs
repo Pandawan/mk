@@ -16,7 +16,7 @@ impl Program {
 impl Display for Program {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for statement in &self.statements {
-            writeln!(f, "{}", statement)?;
+            write!(f, "{}", statement)?;
         }
         Ok(())
     }
@@ -43,7 +43,13 @@ pub enum Statement {
 impl Display for Statement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Let { name, value } => write!(f, "{} {} = {};", Token::Let, name, value),
+            Self::Let { name, value } => write!(
+                f,
+                "{tok} {ident} = {val};",
+                tok = Token::Let,
+                ident = name,
+                val = value
+            ),
             Self::Return { value } => write!(f, "{} {}", Token::Return, value),
             Self::Expression { expression } => write!(f, "{}", expression),
         }
@@ -52,16 +58,57 @@ impl Display for Statement {
 
 #[derive(Debug, PartialEq)]
 pub enum Expression {
+    // Literal
     Identifier(String),
+    Number(u64),
     Nil,
+
+    // Complex
+    Prefix(Box<PrefixExpression>),
+    Infix(Box<InfixExpression>),
 }
 
 impl Display for Expression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Identifier(name) => write!(f, "{}", name),
+            Self::Number(value) => write!(f, "{}", value),
             Self::Nil => write!(f, "nil"),
+
+            Self::Prefix(prefix) => write!(f, "{}", prefix),
+            Self::Infix(infix) => write!(f, "{}", infix),
         }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct PrefixExpression {
+    pub operator: Token,
+    pub right: Expression,
+}
+
+impl Display for PrefixExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({op}{r})", op = self.operator, r = self.right)
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct InfixExpression {
+    pub left: Expression,
+    pub operator: Token,
+    pub right: Expression,
+}
+
+impl Display for InfixExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "({l} {op} {r})",
+            l = self.left,
+            op = self.operator,
+            r = self.right
+        )
     }
 }
 
@@ -77,6 +124,6 @@ mod tests {
             }],
         };
 
-        assert_eq!(program.to_string(), "let myVar = anotherVar;\n")
+        assert_eq!(program.to_string(), "let myVar = anotherVar;")
     }
 }

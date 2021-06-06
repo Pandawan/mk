@@ -9,6 +9,8 @@ fn main() {
 
     let input = "
     let test = 10;
+    5 + 5 > -5;
+    return 10 + 5;
     ";
     let lexer = lexer::Lexer::new(input);
     let mut parser = parser::Parser::new(lexer);
