@@ -61,6 +61,7 @@ pub enum Expression {
     // Literal
     Identifier(String),
     Number(u64),
+    Boolean(bool),
     Nil,
 
     // Complex
@@ -73,6 +74,7 @@ impl Display for Expression {
         match self {
             Self::Identifier(name) => write!(f, "{}", name),
             Self::Number(value) => write!(f, "{}", value),
+            Self::Boolean(value) => write!(f, "{}", value),
             Self::Nil => write!(f, "nil"),
 
             Self::Prefix(prefix) => write!(f, "{}", prefix),

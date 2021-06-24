@@ -43,7 +43,7 @@ enum Precedence {
     Sum,
     Product,
     Prefix,
-    Call,
+    // Call,
 }
 
 impl Precedence {
@@ -182,6 +182,9 @@ impl<'a> Parser<'a> {
         match token {
             Token::Identifier(_) => Some(Parser::parse_identifier_expression),
             Token::Number(_) => Some(Parser::parse_number_expression),
+            Token::True | Token::False => Some(Parser::parse_boolean_expression),
+
+            Token::LeftParen => Some(Parser::parse_grouped_expression),
 
             Token::Bang | Token::Minus => Some(Parser::parse_prefix_expression),
             _ => None,
@@ -222,6 +225,30 @@ impl<'a> Parser<'a> {
                 parser.current_token.clone(),
             ))
         }
+    }
+
+    fn parse_boolean_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
+        match parser.current_token {
+            Token::True => Ok(Expression::Boolean(true)),
+            Token::False => Ok(Expression::Boolean(false)),
+            _ => Err(ParseError::Expected(
+                "boolean".to_string(),
+                parser.current_token.clone(),
+            )),
+        }
+    }
+
+    fn parse_grouped_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
+        // Consume left parenthesis
+        parser.next_token();
+
+        // Parse the inside expression
+        let exp = parser.parse_expression(Precedence::Lowest);
+
+        // Expect a right (closing) parenthesis
+        parser.expect_peek(Token::RightParen)?;
+
+        return exp;
     }
 
     fn parse_prefix_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
@@ -317,7 +344,7 @@ mod tests {
     use crate::token::Token;
 
     #[test]
-    fn test_let_statement() {
+    fn let_statement() {
         let input = "\
         let x = 5;
         let y = 10;
@@ -340,7 +367,7 @@ mod tests {
     }
 
     #[test]
-    fn test_return_statement() {
+    fn return_statement() {
         let input = "\
         return 5;
         return y;";
@@ -359,35 +386,38 @@ mod tests {
     }
 
     #[test]
-    fn test_identifier_expression() {
+    fn identifier_expression() {
         let input = "foobar;";
 
         let prog = setup(input, 1);
+        let expr = unwrap_expression(&prog);
 
-        assert_eq!(
-            prog.statements[0],
-            Statement::Expression {
-                expression: Expression::Identifier("foobar".to_string())
-            }
-        )
+        test_identifier(expr, "foobar".to_string());
     }
 
     #[test]
-    fn test_number_expression() {
+    fn number_expression() {
         let input = "5;";
 
         let prog = setup(input, 1);
+        let expr = unwrap_expression(&prog);
 
-        assert_eq!(
-            prog.statements[0],
-            Statement::Expression {
-                expression: Expression::Number(5)
-            }
-        )
+        test_number_literal(expr, 5);
     }
 
     #[test]
-    fn test_prefix_expression() {
+    fn boolean_expression() {
+        let input = "true;";
+
+        let prog = setup(input, 1);
+        let expr = unwrap_expression(&prog);
+
+        test_boolean_literal(expr, true);
+    }
+
+    #[test]
+    fn prefix_number_expression() {
+        // Tests: (input, operator, value)
         let tests: Vec<(&str, Token, u64)> =
             vec![("!5;", Token::Bang, 5), ("-15", Token::Minus, 15)];
 
@@ -411,7 +441,35 @@ mod tests {
     }
 
     #[test]
-    fn test_infix_expression() {
+    fn prefix_boolean_expression() {
+        // Tests: (input, operator, value)
+        let tests: Vec<(&str, Token, bool)> = vec![
+            ("!true;", Token::Bang, true),
+            ("!false", Token::Bang, false),
+        ];
+
+        for (input, op, right) in tests {
+            let prog = setup(input, 1);
+
+            let expr = unwrap_expression(&prog);
+
+            match expr {
+                Expression::Prefix(expr) => {
+                    assert_eq!(
+                        op, expr.operator,
+                        "expected operator {} but got {}",
+                        op, expr.operator,
+                    );
+                    test_boolean_literal(&expr.right, right);
+                }
+                expr => panic!("expected prefix expression but got {}", expr),
+            }
+        }
+    }
+
+    #[test]
+    fn infix_number_expression() {
+        // Tests: (input, left_value, operator, right_value)
         let tests: Vec<(&str, u64, Token, u64)> = vec![
             ("5 + 5;", 5, Token::Plus, 5),
             ("5 - 5;", 5, Token::Minus, 5),
@@ -444,8 +502,38 @@ mod tests {
     }
 
     #[test]
-    fn test_operator_precedence() {
+    fn infix_boolean_expression() {
+        // Tests: (input, left_value, operator, right_value)
+        let tests: Vec<(&str, bool, Token, bool)> = vec![
+            ("true == true", true, Token::EqualEqual, true),
+            ("true != false", true, Token::BangEqual, false),
+            ("false == false", false, Token::EqualEqual, false),
+        ];
+
+        for (input, left, op, right) in tests {
+            let prog = setup(input, 1);
+
+            let expr = unwrap_expression(&prog);
+
+            match expr {
+                Expression::Infix(expr) => {
+                    test_boolean_literal(&expr.left, left);
+                    assert_eq!(
+                        op, expr.operator,
+                        "expected operator {} but got {}",
+                        op, expr.operator,
+                    );
+                    test_boolean_literal(&expr.right, right);
+                }
+                expr => panic!("expected prefix expression but got {}", expr),
+            }
+        }
+    }
+
+    #[test]
+    fn operator_precedence() {
         // Tests: (input, expected)
+        #[rustfmt::skip]
         let tests = vec![
             ("-a * b", "((-a) * b)"),
             ("!-a", "(!(-a))"),
@@ -458,32 +546,28 @@ mod tests {
             ("3 + 4; -5 * 5", "(3 + 4)((-5) * 5)"),
             ("5 > 4 == 3 < 4", "((5 > 4) == (3 < 4))"),
             ("5 < 4 != 3 > 4", "((5 < 4) != (3 > 4))"),
-            (
-                "3 + 4 * 5 == 3 * 1 + 4 * 5",
-                "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))",
-            ),
+            ("3 + 4 * 5 == 3 * 1 + 4 * 5", "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))"),
+            ("true", "true"),
+            ("false", "false"),
+            ("3 > 5 == false", "((3 > 5) == false)"),
+            ("3 < 5 == true", "((3 < 5) == true)"),
+            ("1 + (2 + 3) + 4", "((1 + (2 + 3)) + 4)"),
+            ("(5 + 5) * 2", "((5 + 5) * 2)"),
+            ("2 / (5 + 5)", "(2 / (5 + 5))"),
+            ("-(5 + 5)", "(-(5 + 5))"),
+            ("!(true == true)", "(!(true == true))"),
+            /*
+            ("a + add(b * c) + d", "((a + add((b * c))) + d)"),
+            ("add(a, b, 1, 2 * 3, 4 + 5, add(6, 7 * 8))", "add(a, b, 1, (2 * 3), (4 + 5), add(6, (7 * 8)))"),
+            ("add(a + b + c * d / f + g)", "add((((a + b) + ((c * d) / f)) + g))"),
+            ("a * [1, 2, 3, 4][b * c] * d", "((a * ([1, 2, 3, 4][(b * c)])) * d)"),
+            ("add(a * b[2], b[1], 2 * [1, 2][1])", "add((a * (b[2])), (b[1]), (2 * ([1, 2][1])))"),
+            */
         ];
 
         for (input, expected) in tests {
             let prog = setup(input, 0).to_string();
-
             assert_eq!(expected, prog, "expected '{}' but got '{}'", expected, prog)
-        }
-    }
-
-    fn unwrap_expression(prog: &Program) -> &Expression {
-        match prog.statements.first().unwrap() {
-            Statement::Expression { expression } => &expression,
-            stmt => panic!("{:?} isn't an expression statement", stmt),
-        }
-    }
-
-    fn test_number_literal(expr: &Expression, value: u64) {
-        match expr {
-            Expression::Number(num) => {
-                assert_eq!(value, *num, "expected {} but got {}", value, num)
-            }
-            _ => panic!("expected number literal {} but got {}", value, expr),
         }
     }
 
@@ -510,6 +594,58 @@ mod tests {
                 }
                 panic!("parser errors")
             }
+        }
+    }
+
+    fn unwrap_expression(prog: &Program) -> &Expression {
+        match prog.statements.first().unwrap() {
+            Statement::Expression { expression } => &expression,
+            stmt => panic!("{:?} isn't an expression statement", stmt),
+        }
+    }
+
+    fn test_identifier(expr: &Expression, expected_value: String) {
+        match expr {
+            Expression::Identifier(name) => {
+                assert_eq!(
+                    expected_value, *name,
+                    "expected identifier with name {} but got {}",
+                    expected_value, name
+                )
+            }
+            _ => panic!("expected identifier {} but got {}", expected_value, expr),
+        }
+    }
+
+    fn test_number_literal(expr: &Expression, expected_value: u64) {
+        match expr {
+            Expression::Number(num) => {
+                assert_eq!(
+                    expected_value, *num,
+                    "expected {} but got {}",
+                    expected_value, num
+                )
+            }
+            _ => panic!(
+                "expected number literal {} but got {}",
+                expected_value, expr
+            ),
+        }
+    }
+
+    fn test_boolean_literal(expr: &Expression, expected_value: bool) {
+        match expr {
+            Expression::Boolean(num) => {
+                assert_eq!(
+                    expected_value, *num,
+                    "expected {} but got {}",
+                    expected_value, num
+                )
+            }
+            _ => panic!(
+                "expected boolean literal {} but got {}",
+                expected_value, expr
+            ),
         }
     }
 }
