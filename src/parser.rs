@@ -1,6 +1,8 @@
 use std::fmt::Display;
 
-use crate::ast::{Expression, InfixExpression, PrefixExpression, Program, Statement};
+use crate::ast::{
+    BlockStatement, Expression, IfExpression, InfixExpression, PrefixExpression, Program, Statement,
+};
 use crate::{lexer::Lexer, token::Token};
 
 #[derive(Debug)]
@@ -180,6 +182,8 @@ impl<'a> Parser<'a> {
 
     fn get_prefix_fn(&self, token: &Token) -> Option<PrefixFn> {
         match token {
+            Token::If => Some(Parser::parse_if_expression),
+
             Token::Identifier(_) => Some(Parser::parse_identifier_expression),
             Token::Number(_) => Some(Parser::parse_number_expression),
             Token::True | Token::False => Some(Parser::parse_boolean_expression),
@@ -203,6 +207,55 @@ impl<'a> Parser<'a> {
             | Token::GreaterThan => Some(Parser::parse_infix_expression),
             _ => None,
         }
+    }
+
+    fn parse_if_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
+        // Consume the `if` token
+        parser.next_token();
+
+        // Parse the condition (note: parentheses are not required)
+        let condition = parser.parse_expression(Precedence::Lowest)?;
+
+        // Expect opening brace of consequence block
+        parser.expect_peek(Token::LeftBrace)?;
+
+        let consequence = parser.parse_block_statement()?;
+
+        let alternative = if parser.peek_token_is(&Token::Else) {
+            // Consume the `else` token
+            parser.next_token();
+
+            // TODO: Allow `else if` (potentially by branching separately based on Token::LeftBrace vs Token::If)
+
+            // Expect opening brace of alternative block
+            parser.expect_peek(Token::LeftBrace)?;
+
+            Some(parser.parse_block_statement()?)
+        } else {
+            None
+        };
+
+        Ok(Expression::If(Box::new(IfExpression {
+            condition,
+            consequence,
+            alternative,
+        })))
+    }
+
+    fn parse_block_statement(&mut self) -> ParseResult<BlockStatement> {
+        let mut statements = Vec::new();
+
+        // Consume the left brace
+        self.next_token();
+
+        while !self.current_token_is(Token::RightBrace) && !self.current_token_is(Token::Eof) {
+            // TODO: Is throwing on Err the right approach?
+            let stmt = self.parse_statement()?;
+            statements.push(stmt);
+            self.next_token();
+        }
+
+        return Ok(BlockStatement { statements });
     }
 
     fn parse_identifier_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
@@ -392,7 +445,7 @@ mod tests {
         let prog = setup(input, 1);
         let expr = unwrap_expression(&prog);
 
-        test_identifier(expr, "foobar".to_string());
+        test_identifier(expr, "foobar");
     }
 
     #[test]
@@ -407,12 +460,15 @@ mod tests {
 
     #[test]
     fn boolean_expression() {
-        let input = "true;";
+        // Tests: (input, value)
+        let tests = vec![("true;", true), ("false;", false)];
 
-        let prog = setup(input, 1);
-        let expr = unwrap_expression(&prog);
+        for (input, value) in tests {
+            let prog = setup(input, 1);
+            let expr = unwrap_expression(&prog);
 
-        test_boolean_literal(expr, true);
+            test_boolean_literal(expr, value);
+        }
     }
 
     #[test]
@@ -571,6 +627,63 @@ mod tests {
         }
     }
 
+    #[test]
+    fn if_expression() {
+        let input = "if x < y { x }";
+
+        let prog = setup(input, 1);
+        let expr = unwrap_expression(&prog);
+
+        match expr {
+            Expression::If(if_expr) => {
+                test_if_condition(&if_expr.condition, "x", Token::LessThan, "y");
+
+                assert_eq!(if_expr.consequence.statements.len(), 1);
+
+                match &if_expr.consequence.statements.first().unwrap() {
+                    Statement::Expression { expression } => test_identifier(expression, "x"),
+                    stmt => panic!("expected expression statement but got {:?}", stmt),
+                }
+
+                assert_eq!(if_expr.alternative, None);
+            }
+            expr => panic!("expected if expression but got {}", expr),
+        }
+    }
+
+    #[test]
+    fn if_else_expression() {
+        let input = "if x < y { x } else { y }";
+
+        let prog = setup(input, 1);
+        let expr = unwrap_expression(&prog);
+
+        match expr {
+            Expression::If(if_expr) => {
+                test_if_condition(&if_expr.condition, "x", Token::LessThan, "y");
+
+                assert_eq!(if_expr.consequence.statements.len(), 1);
+
+                match &if_expr.consequence.statements.first().unwrap() {
+                    Statement::Expression { expression } => test_identifier(expression, "x"),
+                    stmt => panic!("expected expression statement but got {:?}", stmt),
+                }
+
+                if let Some(alternative) = &if_expr.alternative {
+                    assert_eq!(alternative.statements.len(), 1);
+
+                    match &alternative.statements.first().unwrap() {
+                        Statement::Expression { expression } => test_identifier(expression, "y"),
+                        stmt => panic!("expected expression statement but got {:?}", stmt),
+                    }
+                } else {
+                    panic!("expected alternative (else) block")
+                }
+            }
+            expr => panic!("expected if expression but got {}", expr),
+        }
+    }
+
     fn setup(input: &str, stmt_count: usize) -> Program {
         let l = Lexer::new(input);
         let mut p = Parser::new(l);
@@ -604,7 +717,7 @@ mod tests {
         }
     }
 
-    fn test_identifier(expr: &Expression, expected_value: String) {
+    fn test_identifier(expr: &Expression, expected_value: &str) {
         match expr {
             Expression::Identifier(name) => {
                 assert_eq!(
@@ -646,6 +759,29 @@ mod tests {
                 "expected boolean literal {} but got {}",
                 expected_value, expr
             ),
+        }
+    }
+
+    fn test_if_condition(
+        expr: &Expression,
+        expected_left_ident: &str,
+        expected_operator: Token,
+        expected_right_ident: &str,
+    ) {
+        match expr {
+            Expression::Infix(infix) => {
+                test_identifier(&infix.left, expected_left_ident);
+
+                if infix.operator != expected_operator {
+                    panic!(
+                        "expected {} operator but got {}",
+                        expected_operator, infix.operator
+                    );
+                }
+
+                test_identifier(&infix.right, expected_right_ident);
+            }
+            expr => panic!("expected infix expression (condition) but got {}", expr),
         }
     }
 }

@@ -56,6 +56,21 @@ impl Display for Statement {
     }
 }
 
+// TODO: Block Statements are special, should they still be part of the Statement enum?
+#[derive(Debug, PartialEq)]
+pub struct BlockStatement {
+    pub statements: Vec<Statement>,
+}
+
+impl Display for BlockStatement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for stmt in &self.statements {
+            write!(f, "{}", stmt)?;
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub enum Expression {
     // Literal
@@ -67,6 +82,7 @@ pub enum Expression {
     // Complex
     Prefix(Box<PrefixExpression>),
     Infix(Box<InfixExpression>),
+    If(Box<IfExpression>),
 }
 
 impl Display for Expression {
@@ -79,6 +95,7 @@ impl Display for Expression {
 
             Self::Prefix(prefix) => write!(f, "{}", prefix),
             Self::Infix(infix) => write!(f, "{}", infix),
+            Self::If(if_exp) => write!(f, "{}", if_exp),
         }
     }
 }
@@ -111,6 +128,27 @@ impl Display for InfixExpression {
             op = self.operator,
             r = self.right
         )
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct IfExpression {
+    pub condition: Expression,
+    // Block if condition is true
+    pub consequence: BlockStatement,
+    // Block if condition is false
+    pub alternative: Option<BlockStatement>,
+}
+
+impl Display for IfExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "if {} {}", self.condition, self.consequence)?;
+
+        if let Some(ref stmt) = self.alternative {
+            write!(f, "else {}", stmt)?;
+        }
+
+        Ok(())
     }
 }
 
