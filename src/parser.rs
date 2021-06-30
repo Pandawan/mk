@@ -1,7 +1,8 @@
 use std::fmt::Display;
 
 use crate::ast::{
-    BlockStatement, Expression, IfExpression, InfixExpression, PrefixExpression, Program, Statement,
+    BlockStatement, Expression, FunctionLiteral, IdentifierLiteral, IfExpression, InfixExpression,
+    PrefixExpression, Program, Statement,
 };
 use crate::{lexer::Lexer, token::Token};
 
@@ -183,6 +184,7 @@ impl<'a> Parser<'a> {
     fn get_prefix_fn(&self, token: &Token) -> Option<PrefixFn> {
         match token {
             Token::If => Some(Parser::parse_if_expression),
+            Token::Fn => Some(Parser::parse_function_literal),
 
             Token::Identifier(_) => Some(Parser::parse_identifier_expression),
             Token::Number(_) => Some(Parser::parse_number_expression),
@@ -258,15 +260,65 @@ impl<'a> Parser<'a> {
         return Ok(BlockStatement { statements });
     }
 
-    fn parse_identifier_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
-        if let Token::Identifier(ref name) = parser.current_token {
-            Ok(Expression::Identifier(name.clone()))
+    fn parse_function_literal(parser: &mut Parser<'_>) -> ParseResult<Expression> {
+        parser.expect_peek(Token::LeftParen)?;
+
+        let parameters = parser.parse_function_parameters()?;
+
+        parser.expect_peek(Token::LeftBrace)?;
+
+        let body = parser.parse_block_statement()?;
+
+        return Ok(Expression::Function(Box::new(FunctionLiteral {
+            parameters,
+            body,
+        })));
+    }
+
+    fn parse_function_parameters(&mut self) -> ParseResult<Vec<IdentifierLiteral>> {
+        let mut identifiers = Vec::new();
+
+        // No parameters, parentheses close immediately
+        if self.peek_token_is(&Token::RightParen) {
+            // Consume the left parenthesis
+            self.next_token();
+            return Ok(identifiers);
+        }
+
+        // Consume the left parenthesis
+        self.next_token();
+
+        // Push the first parameter identifier
+        identifiers.push(self.parse_identifier_as_literal()?);
+
+        while self.peek_token_is(&Token::Comma) {
+            // Consume previous identifier
+            self.next_token();
+            // Consume comma
+            self.next_token();
+            // Push the next parameter identifier
+            identifiers.push(self.parse_identifier_as_literal()?);
+        }
+
+        self.expect_peek(Token::RightParen)?;
+
+        return Ok(identifiers);
+    }
+
+    fn parse_identifier_as_literal(&mut self) -> ParseResult<IdentifierLiteral> {
+        if let Token::Identifier(ref name) = self.current_token {
+            Ok(IdentifierLiteral::from(name.clone()))
         } else {
             Err(ParseError::Expected(
                 "identifier".to_string(),
-                parser.current_token.clone(),
+                self.current_token.clone(),
             ))
         }
+    }
+
+    fn parse_identifier_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
+        let identifier_literal = parser.parse_identifier_as_literal()?;
+        return Ok(Expression::Identifier(identifier_literal));
     }
 
     fn parse_number_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
@@ -391,7 +443,7 @@ impl<'a> Parser<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::ast::{Expression, Program, Statement};
+    use crate::ast::{Expression, IdentifierLiteral, Program, Statement};
     use crate::lexer::Lexer;
     use crate::parser::Parser;
     use crate::token::Token;
@@ -664,7 +716,7 @@ mod tests {
 
                 assert_eq!(if_expr.consequence.statements.len(), 1);
 
-                match &if_expr.consequence.statements.first().unwrap() {
+                match if_expr.consequence.statements.first().unwrap() {
                     Statement::Expression { expression } => test_identifier(expression, "x"),
                     stmt => panic!("expected expression statement but got {:?}", stmt),
                 }
@@ -672,7 +724,7 @@ mod tests {
                 if let Some(alternative) = &if_expr.alternative {
                     assert_eq!(alternative.statements.len(), 1);
 
-                    match &alternative.statements.first().unwrap() {
+                    match alternative.statements.first().unwrap() {
                         Statement::Expression { expression } => test_identifier(expression, "y"),
                         stmt => panic!("expected expression statement but got {:?}", stmt),
                     }
@@ -681,6 +733,84 @@ mod tests {
                 }
             }
             expr => panic!("expected if expression but got {}", expr),
+        }
+    }
+
+    #[test]
+    fn function_literal() {
+        let input = "fn(x, y) { x + y; }";
+
+        let prog = setup(input, 1);
+        let expr = unwrap_expression(&prog);
+
+        match expr {
+            Expression::Function(func) => {
+                assert_eq!(
+                    func.parameters.len(),
+                    2,
+                    "expected 2 parameters but got {:?}",
+                    func.parameters
+                );
+                test_identifier_literal(&func.parameters[0], "x");
+                test_identifier_literal(&func.parameters[1], "y");
+                assert_eq!(
+                    func.body.statements.len(),
+                    1,
+                    "expected 1 body statement but got {:?}",
+                    func.body
+                );
+
+                match func.body.statements.first().unwrap() {
+                    Statement::Expression { expression } => match expression {
+                        Expression::Infix(infix) => {
+                            assert_eq!(
+                                infix.operator,
+                                Token::Plus,
+                                "expected + but got {}",
+                                infix.operator
+                            );
+                            test_identifier(&infix.left, "x");
+                            test_identifier(&infix.right, "y");
+                        }
+                        stmt => panic!("expected infix expression but got {:?}", stmt),
+                    },
+                    stmt => panic!("expected expression statement but got {:?}", stmt),
+                }
+            }
+            expr => panic!("expected function literal expression but got {}", expr),
+        }
+    }
+
+    #[test]
+    fn function_parameters() {
+        // Tests: (input, expected parameters)
+        #[rustfmt::skip]
+        let tests = vec![
+            ("fn() {}", vec![]),
+            ("fn(x) {}", vec!["x"]),
+            ("fn(x, y, z) {}", vec!["x", "y", "z"])
+        ];
+
+        for (input, expected) in tests {
+            let prog = setup(input, 0);
+            let expr = unwrap_expression(&prog);
+
+            match expr {
+                Expression::Function(func) => {
+                    assert_eq!(
+                        expected.len(),
+                        func.parameters.len(),
+                        "expected {} parameters but got {:?}",
+                        expected.len(),
+                        func.parameters
+                    );
+
+                    for (ident, &expected_value) in func.parameters.iter().zip(expected.iter()) {
+                        test_identifier_literal(ident, expected_value);
+                    }
+                }
+                expr => panic!("expected function literal expression but got {}", expr),
+            }
         }
     }
 
@@ -719,15 +849,19 @@ mod tests {
 
     fn test_identifier(expr: &Expression, expected_value: &str) {
         match expr {
-            Expression::Identifier(name) => {
-                assert_eq!(
-                    expected_value, *name,
-                    "expected identifier with name {} but got {}",
-                    expected_value, name
-                )
+            Expression::Identifier(ident) => {
+                test_identifier_literal(ident, expected_value);
             }
             _ => panic!("expected identifier {} but got {}", expected_value, expr),
         }
+    }
+
+    fn test_identifier_literal(ident: &IdentifierLiteral, expected_value: &str) {
+        assert_eq!(
+            expected_value, ident.name,
+            "expected identifier with name {} but got {}",
+            expected_value, ident.name
+        );
     }
 
     fn test_number_literal(expr: &Expression, expected_value: u64) {

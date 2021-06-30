@@ -74,7 +74,7 @@ impl Display for BlockStatement {
 #[derive(Debug, PartialEq)]
 pub enum Expression {
     // Literal
-    Identifier(String),
+    Identifier(IdentifierLiteral),
     Number(u64),
     Boolean(bool),
     Nil,
@@ -83,6 +83,7 @@ pub enum Expression {
     Prefix(Box<PrefixExpression>),
     Infix(Box<InfixExpression>),
     If(Box<IfExpression>),
+    Function(Box<FunctionLiteral>),
 }
 
 impl Display for Expression {
@@ -96,7 +97,25 @@ impl Display for Expression {
             Self::Prefix(prefix) => write!(f, "{}", prefix),
             Self::Infix(infix) => write!(f, "{}", infix),
             Self::If(if_exp) => write!(f, "{}", if_exp),
+            Self::Function(func) => write!(f, "{}", func),
         }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct IdentifierLiteral {
+    pub name: String,
+}
+
+impl Display for IdentifierLiteral {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
+impl From<String> for IdentifierLiteral {
+    fn from(name: String) -> Self {
+        return Self { name };
     }
 }
 
@@ -152,15 +171,37 @@ impl Display for IfExpression {
     }
 }
 
+#[derive(Debug, PartialEq)]
+pub struct FunctionLiteral {
+    // Parameter identifiers
+    pub parameters: Vec<IdentifierLiteral>,
+    pub body: BlockStatement,
+}
+
+impl Display for FunctionLiteral {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "fn({}) {}",
+            self.parameters
+                .iter()
+                .map(|ident| ident.to_string())
+                .collect::<Vec<String>>()
+                .join(", "),
+            self.body
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::ast::{Expression, Program, Statement};
+    use crate::ast::{Expression, IdentifierLiteral, Program, Statement};
     #[test]
     fn test_display_program() {
         let program = Program {
             statements: vec![Statement::Let {
                 name: "myVar".to_string(),
-                value: Expression::Identifier("anotherVar".to_string()),
+                value: Expression::Identifier(IdentifierLiteral::from("anotherVar".to_string())),
             }],
         };
 

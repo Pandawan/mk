@@ -214,7 +214,7 @@ mod tests {
         let mut lex = Lexer::new(input);
         assert_eq!(lex.next_token(), Token::True);
         assert_eq!(lex.next_token(), Token::False);
-        assert_eq!(lex.next_token(), Token::Func);
+        assert_eq!(lex.next_token(), Token::Fn);
         assert_eq!(lex.next_token(), Token::Let);
         assert_eq!(lex.next_token(), Token::If);
         assert_eq!(lex.next_token(), Token::Else);
