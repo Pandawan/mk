@@ -117,36 +117,40 @@ impl<'a> Parser<'a> {
 
         self.expect_peek(Token::Equal)?;
 
-        // TODO: Parse expression
-        while !self.current_token_is(Token::Semicolon) && !self.current_token_is(Token::Eof) {
+        // Consume equal sign
+        self.next_token();
+
+        let value = self.parse_expression(Precedence::Lowest)?;
+
+        // Consume the semicolon at the end of the statement
+        // TODO: Optional semicolon?
+        if self.peek_token_is(&Token::Semicolon) {
             self.next_token();
         }
 
-        Ok(Statement::Let {
-            name,
-            value: Expression::Nil,
-        })
+        Ok(Statement::Let { name, value })
     }
 
     fn parse_return_statement(&mut self) -> ParseResult<Statement> {
         // Consume the `return` token
         self.next_token();
 
-        // TODO: Parse expression
-        while !self.current_token_is(Token::Semicolon) && !self.current_token_is(Token::Eof) {
+        let value = self.parse_expression(Precedence::Lowest)?;
+
+        // Consume the semicolon at the end of the statement
+        // TODO: Optional semicolon?
+        if self.peek_token_is(&Token::Semicolon) {
             self.next_token();
         }
 
-        Ok(Statement::Return {
-            value: Expression::Nil,
-        })
+        Ok(Statement::Return { value })
     }
 
     fn parse_expression_statement(&mut self) -> ParseResult<Statement> {
         let expr = self.parse_expression(Precedence::Lowest)?;
 
         // Consume the semicolon at the end of the statement
-        // TODO: Optional semicolon? What about for let & return?
+        // TODO: Optional semicolon?
         if self.peek_token_is(&Token::Semicolon) {
             self.next_token();
         }
@@ -489,43 +493,62 @@ mod tests {
 
     #[test]
     fn let_statement() {
-        let input = "\
-        let x = 5;
-        let y = 10;
-        let foobar = 838383;";
+        let tests = vec![
+            ("let x = 5;", "x", Expression::Number(5)),
+            ("let y = true;", "y", Expression::Boolean(true)),
+            (
+                "let foobar = y;",
+                "foobar",
+                Expression::Identifier(IdentifierLiteral::from("y")),
+            ),
+        ];
 
-        let prog = setup(input, 3);
+        for (input, expected_ident, expected_value) in tests {
+            let prog = setup(input, 1);
 
-        let tests = vec!["x", "y", "foobar"];
+            match &prog.statements[0] {
+                Statement::Let { name, value } => {
+                    assert_eq!(
+                        expected_ident, name,
+                        "expected identifier {} but got {}",
+                        expected_ident, name
+                    );
 
-        for (statement, test) in prog.statements.iter().zip(tests.iter()) {
-            assert_eq!(
-                *statement,
-                Statement::Let {
-                    name: test.to_string(),
-                    // TODO: Check value
-                    value: Expression::Nil
+                    assert_eq!(
+                        expected_value, *value,
+                        "expected value {} but got {}",
+                        expected_value, value
+                    );
                 }
-            );
+                stmt => panic!("expected let statement but got {}", stmt),
+            }
         }
     }
 
     #[test]
     fn return_statement() {
-        let input = "\
-        return 5;
-        return y;";
+        let tests = vec![
+            ("return 5;", Expression::Number(5)),
+            ("return true;", Expression::Boolean(true)),
+            (
+                "return y;",
+                Expression::Identifier(IdentifierLiteral::from("y")),
+            ),
+        ];
 
-        let prog = setup(input, 2);
+        for (input, expected_value) in tests {
+            let prog = setup(input, 1);
 
-        for statement in prog.statements {
-            assert_eq!(
-                statement,
-                Statement::Return {
-                    // TODO: Check value
-                    value: Expression::Nil
+            match &prog.statements[0] {
+                Statement::Return { value } => {
+                    assert_eq!(
+                        expected_value, *value,
+                        "expected value {} but got {}",
+                        expected_value, value
+                    );
                 }
-            );
+                stmt => panic!("expected let statement but got {}", stmt),
+            }
         }
     }
 

@@ -115,6 +115,14 @@ impl Display for IdentifierLiteral {
     }
 }
 
+impl From<&str> for IdentifierLiteral {
+    fn from(name: &str) -> Self {
+        return Self {
+            name: name.to_owned(),
+        };
+    }
+}
+
 impl From<String> for IdentifierLiteral {
     fn from(name: String) -> Self {
         return Self { name };
