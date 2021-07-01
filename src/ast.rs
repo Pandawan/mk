@@ -84,6 +84,7 @@ pub enum Expression {
     Infix(Box<InfixExpression>),
     If(Box<IfExpression>),
     Function(Box<FunctionLiteral>),
+    Call(Box<CallExpression>),
 }
 
 impl Display for Expression {
@@ -98,6 +99,7 @@ impl Display for Expression {
             Self::Infix(infix) => write!(f, "{}", infix),
             Self::If(if_exp) => write!(f, "{}", if_exp),
             Self::Function(func) => write!(f, "{}", func),
+            Self::Call(call) => write!(f, "{}", call),
         }
     }
 }
@@ -189,6 +191,27 @@ impl Display for FunctionLiteral {
                 .collect::<Vec<String>>()
                 .join(", "),
             self.body
+        )
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct CallExpression {
+    pub function: Expression,
+    pub arguments: Vec<Expression>,
+}
+
+impl Display for CallExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}({})",
+            self.function,
+            self.arguments
+                .iter()
+                .map(|ident| ident.to_string())
+                .collect::<Vec<String>>()
+                .join(", ")
         )
     }
 }

@@ -1,8 +1,8 @@
 use std::fmt::Display;
 
 use crate::ast::{
-    BlockStatement, Expression, FunctionLiteral, IdentifierLiteral, IfExpression, InfixExpression,
-    PrefixExpression, Program, Statement,
+    BlockStatement, CallExpression, Expression, FunctionLiteral, IdentifierLiteral, IfExpression,
+    InfixExpression, PrefixExpression, Program, Statement,
 };
 use crate::{lexer::Lexer, token::Token};
 
@@ -46,7 +46,7 @@ enum Precedence {
     Sum,
     Product,
     Prefix,
-    // Call,
+    Call,
 }
 
 impl Precedence {
@@ -60,7 +60,7 @@ impl Precedence {
             Token::Minus => Precedence::Sum,
             Token::Slash => Precedence::Product,
             Token::Star => Precedence::Product,
-            // Token::LeftParen => Precedence::Call,
+            Token::LeftParen => Precedence::Call,
             // Token::LeftBrace => Precedence::Index,
             _ => Precedence::Lowest,
         }
@@ -199,6 +199,8 @@ impl<'a> Parser<'a> {
 
     fn get_infix_fn(&self, token: &Token) -> Option<InfixFn> {
         match token {
+            Token::LeftParen => Some(Parser::parse_call_expression),
+
             Token::Plus
             | Token::Minus
             | Token::Slash
@@ -365,6 +367,43 @@ impl<'a> Parser<'a> {
             operator,
             right,
         })))
+    }
+
+    fn parse_call_expression(parser: &mut Parser<'_>, left: Expression) -> ParseResult<Expression> {
+        let arguments = parser.parse_call_arguments()?;
+        Ok(Expression::Call(Box::new(CallExpression {
+            function: left,
+            arguments,
+        })))
+    }
+
+    fn parse_call_arguments(&mut self) -> ParseResult<Vec<Expression>> {
+        let mut arguments = Vec::new();
+
+        // No parameters, parentheses close immediately
+        if self.peek_token_is(&Token::RightParen) {
+            // Consume the left parenthesis
+            self.next_token();
+            return Ok(arguments);
+        }
+
+        // Consume the left parenthesis
+        self.next_token();
+        // Push the first parameter identifier
+        arguments.push(self.parse_expression(Precedence::Lowest)?);
+
+        while self.peek_token_is(&Token::Comma) {
+            // Consume previous identifier
+            self.next_token();
+            // Consume comma
+            self.next_token();
+            // Push the next parameter identifier
+            arguments.push(self.parse_expression(Precedence::Lowest)?);
+        }
+
+        self.expect_peek(Token::RightParen)?;
+
+        Ok(arguments)
     }
 
     fn parse_infix_expression(
@@ -664,10 +703,10 @@ mod tests {
             ("2 / (5 + 5)", "(2 / (5 + 5))"),
             ("-(5 + 5)", "(-(5 + 5))"),
             ("!(true == true)", "(!(true == true))"),
-            /*
             ("a + add(b * c) + d", "((a + add((b * c))) + d)"),
             ("add(a, b, 1, 2 * 3, 4 + 5, add(6, 7 * 8))", "add(a, b, 1, (2 * 3), (4 + 5), add(6, (7 * 8)))"),
             ("add(a + b + c * d / f + g)", "add((((a + b) + ((c * d) / f)) + g))"),
+            /*
             ("a * [1, 2, 3, 4][b * c] * d", "((a * ([1, 2, 3, 4][(b * c)])) * d)"),
             ("add(a * b[2], b[1], 2 * [1, 2][1])", "add((a * (b[2])), (b[1]), (2 * ([1, 2][1])))"),
             */
@@ -811,6 +850,46 @@ mod tests {
                 }
                 expr => panic!("expected function literal expression but got {}", expr),
             }
+        }
+    }
+
+    #[test]
+    fn call_expression() {
+        let input = "add(1, 2 * 3)";
+
+        let prog = setup(input, 1);
+        let expr = unwrap_expression(&prog);
+
+        match expr {
+            Expression::Call(call) => {
+                test_identifier(&call.function, "add");
+                assert_eq!(
+                    call.arguments.len(),
+                    2,
+                    "expected 2 call arguments but got {:?}",
+                    call.arguments
+                );
+
+                test_number_literal(&call.arguments[0], 1);
+
+                match &call.arguments[1] {
+                    Expression::Infix(expr) => {
+                        test_number_literal(&expr.left, 2);
+                        assert_eq!(
+                            Token::Star,
+                            expr.operator,
+                            "expected operator * but got {}",
+                            expr.operator,
+                        );
+                        test_number_literal(&expr.right, 3);
+                    }
+                    expr => panic!(
+                        "expected prefix expression for second argument but got {}",
+                        expr
+                    ),
+                }
+            }
+            expr => panic!("expected call expression but got {}", expr),
         }
     }
 
