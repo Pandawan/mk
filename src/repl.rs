@@ -2,7 +2,7 @@ use rustyline::error::ReadlineError;
 use rustyline::Editor;
 
 use crate::lexer::Lexer;
-use crate::token::Token;
+use crate::parser::Parser;
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
@@ -21,12 +21,19 @@ pub fn repl() {
 
                 rl.add_history_entry(line.as_str());
 
-                let mut l = Lexer::new(&line);
+                let l = Lexer::new(&line);
+                let mut p = Parser::new(l);
+                let prog = p.parse_program();
 
-                loop {
-                    match l.next_token() {
-                        Token::Eof => break,
-                        tok => println!("{:?}", tok),
+                match prog {
+                    Ok(prog) => {
+                        println!("{}", prog);
+                    }
+                    Err(errors) => {
+                        println!("Parser errors:");
+                        for error in errors {
+                            println!("\t{}", error);
+                        }
                     }
                 }
             }
