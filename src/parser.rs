@@ -193,6 +193,7 @@ impl<'a> Parser<'a> {
             Token::Identifier(_) => Some(Parser::parse_identifier_expression),
             Token::Number(_) => Some(Parser::parse_number_expression),
             Token::True | Token::False => Some(Parser::parse_boolean_expression),
+            Token::Nil => Some(Parser::parse_nil_expression),
 
             Token::LeftParen => Some(Parser::parse_grouped_expression),
 
@@ -344,6 +345,16 @@ impl<'a> Parser<'a> {
             Token::False => Ok(Expression::Boolean(false)),
             _ => Err(ParseError::Expected(
                 "boolean".to_string(),
+                parser.current_token.clone(),
+            )),
+        }
+    }
+
+    fn parse_nil_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
+        match parser.current_token {
+            Token::Nil => Ok(Expression::Nil),
+            _ => Err(ParseError::Expected(
+                "nil".to_string(),
                 parser.current_token.clone(),
             )),
         }
@@ -583,6 +594,21 @@ mod tests {
 
             test_boolean_literal(expr, value);
         }
+    }
+
+    #[test]
+    fn nil_expression() {
+        let input = "nil;";
+
+        let prog = setup(input, 1);
+        let expr = unwrap_expression(&prog);
+
+        assert_eq!(
+            Expression::Nil,
+            *expr,
+            "expected nil value but got {}",
+            expr
+        );
     }
 
     #[test]

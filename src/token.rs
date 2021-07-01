@@ -33,6 +33,7 @@ pub enum Token {
     // Keywords
     True,
     False,
+    Nil,
     Fn,
     Let,
     If,
@@ -49,6 +50,7 @@ impl Token {
         match s {
             "true" => Some(Token::True),
             "false" => Some(Token::False),
+            "nil" => Some(Token::Nil),
             "fn" => Some(Token::Fn),
             "let" => Some(Token::Let),
             "if" => Some(Token::If),
@@ -88,6 +90,7 @@ impl fmt::Display for Token {
 
             Token::True => write!(f, "true"),
             Token::False => write!(f, "false"),
+            Token::Nil => write!(f, "nil"),
             Token::Fn => write!(f, "fn"),
             Token::Let => write!(f, "let"),
             Token::If => write!(f, "if"),
