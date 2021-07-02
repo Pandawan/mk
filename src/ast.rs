@@ -2,7 +2,7 @@ use crate::{position::WithSpan, token::Token};
 use std::fmt::Display;
 
 pub struct Program {
-    pub statements: Vec<Statement>,
+    pub statements: Vec<WithSpan<Statement>>,
 }
 
 impl Program {
@@ -16,7 +16,7 @@ impl Program {
 impl Display for Program {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for statement in &self.statements {
-            write!(f, "{}", statement)?;
+            write!(f, "{}", statement.value)?;
         }
         Ok(())
     }
@@ -26,17 +26,17 @@ impl Display for Program {
 pub enum Statement {
     Let {
         /// The name/identifier of the variable
-        name: String,
+        name: WithSpan<IdentifierLiteral>,
         /// The value being assigned
-        value: Expression,
+        value: WithSpan<Expression>,
     },
     Return {
         /// The value being returned
-        value: Expression,
+        value: WithSpan<Expression>,
     },
     Expression {
         /// The expression for this statement
-        expression: Expression,
+        expression: WithSpan<Expression>,
     },
 }
 
@@ -47,11 +47,11 @@ impl Display for Statement {
                 f,
                 "{tok} {ident} = {val};",
                 tok = Token::Let,
-                ident = name,
-                val = value
+                ident = name.value,
+                val = value.value
             ),
-            Self::Return { value } => write!(f, "{} {}", Token::Return, value),
-            Self::Expression { expression } => write!(f, "{}", expression),
+            Self::Return { value } => write!(f, "{} {}", Token::Return, value.value),
+            Self::Expression { expression } => write!(f, "{}", expression.value),
         }
     }
 }
@@ -59,13 +59,13 @@ impl Display for Statement {
 // TODO: Block Statements are special, should they still be part of the Statement enum?
 #[derive(Debug, PartialEq)]
 pub struct BlockStatement {
-    pub statements: Vec<Statement>,
+    pub statements: Vec<WithSpan<Statement>>,
 }
 
 impl Display for BlockStatement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for stmt in &self.statements {
-            write!(f, "{}", stmt)?;
+            write!(f, "{}", stmt.value)?;
         }
         Ok(())
     }
@@ -132,20 +132,25 @@ impl From<String> for IdentifierLiteral {
 #[derive(Debug, PartialEq)]
 pub struct PrefixExpression {
     pub operator: WithSpan<Token>,
-    pub right: Expression,
+    pub right: WithSpan<Expression>,
 }
 
 impl Display for PrefixExpression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({op}{r})", op = self.operator.value, r = self.right)
+        write!(
+            f,
+            "({op}{r})",
+            op = self.operator.value,
+            r = self.right.value
+        )
     }
 }
 
 #[derive(Debug, PartialEq)]
 pub struct InfixExpression {
-    pub left: Expression,
+    pub left: WithSpan<Expression>,
     pub operator: WithSpan<Token>,
-    pub right: Expression,
+    pub right: WithSpan<Expression>,
 }
 
 impl Display for InfixExpression {
@@ -153,28 +158,28 @@ impl Display for InfixExpression {
         write!(
             f,
             "({l} {op} {r})",
-            l = self.left,
+            l = self.left.value,
             op = self.operator.value,
-            r = self.right
+            r = self.right.value
         )
     }
 }
 
 #[derive(Debug, PartialEq)]
 pub struct IfExpression {
-    pub condition: Expression,
+    pub condition: WithSpan<Expression>,
     // Block if condition is true
-    pub consequence: BlockStatement,
+    pub consequence: WithSpan<BlockStatement>,
     // Block if condition is false
-    pub alternative: Option<BlockStatement>,
+    pub alternative: Option<WithSpan<BlockStatement>>,
 }
 
 impl Display for IfExpression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "if {} {}", self.condition, self.consequence)?;
+        write!(f, "if {} {}", self.condition.value, self.consequence.value)?;
 
         if let Some(ref stmt) = self.alternative {
-            write!(f, "else {}", stmt)?;
+            write!(f, "else {}", stmt.value)?;
         }
 
         Ok(())
@@ -184,8 +189,8 @@ impl Display for IfExpression {
 #[derive(Debug, PartialEq)]
 pub struct FunctionLiteral {
     // Parameter identifiers
-    pub parameters: Vec<IdentifierLiteral>,
-    pub body: BlockStatement,
+    pub parameters: Vec<WithSpan<IdentifierLiteral>>,
+    pub body: WithSpan<BlockStatement>,
 }
 
 impl Display for FunctionLiteral {
@@ -195,18 +200,18 @@ impl Display for FunctionLiteral {
             "fn({}) {}",
             self.parameters
                 .iter()
-                .map(|ident| ident.to_string())
+                .map(|ident| ident.value.to_string())
                 .collect::<Vec<String>>()
                 .join(", "),
-            self.body
+            self.body.value
         )
     }
 }
 
 #[derive(Debug, PartialEq)]
 pub struct CallExpression {
-    pub function: Expression,
-    pub arguments: Vec<Expression>,
+    pub function: WithSpan<Expression>,
+    pub arguments: Vec<WithSpan<Expression>>,
 }
 
 impl Display for CallExpression {
@@ -214,10 +219,10 @@ impl Display for CallExpression {
         write!(
             f,
             "{}({})",
-            self.function,
+            self.function.value,
             self.arguments
                 .iter()
-                .map(|ident| ident.to_string())
+                .map(|ident| ident.value.to_string())
                 .collect::<Vec<String>>()
                 .join(", ")
         )
@@ -226,14 +231,20 @@ impl Display for CallExpression {
 
 #[cfg(test)]
 mod tests {
-    use crate::ast::{Expression, IdentifierLiteral, Program, Statement};
+    use crate::{
+        ast::{Expression, IdentifierLiteral, Program, Statement},
+        position::WithSpan,
+    };
     #[test]
     fn test_display_program() {
         let program = Program {
-            statements: vec![Statement::Let {
-                name: "myVar".to_string(),
-                value: Expression::Identifier(IdentifierLiteral::from("anotherVar".to_string())),
-            }],
+            // Using WithSpan::empty b/c convert to string anyway
+            statements: vec![WithSpan::empty(Statement::Let {
+                name: WithSpan::empty(IdentifierLiteral::from("myVar".to_string())),
+                value: WithSpan::empty(Expression::Identifier(IdentifierLiteral::from(
+                    "anotherVar".to_string(),
+                ))),
+            })],
         };
 
         assert_eq!(program.to_string(), "let myVar = anotherVar;")

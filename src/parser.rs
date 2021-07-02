@@ -4,7 +4,7 @@ use crate::ast::{
     BlockStatement, CallExpression, Expression, FunctionLiteral, IdentifierLiteral, IfExpression,
     InfixExpression, PrefixExpression, Program, Statement,
 };
-use crate::position::WithSpan;
+use crate::position::{Span, WithSpan};
 use crate::{lexer::Lexer, token::Token};
 
 #[derive(Debug)]
@@ -42,8 +42,9 @@ impl Display for ParseError {
 
 type ParseResult<T> = Result<T, ParseError>;
 
-type PrefixFn = fn(parser: &mut Parser<'_>) -> ParseResult<Expression>;
-type InfixFn = fn(parser: &mut Parser<'_>, left: Expression) -> ParseResult<Expression>;
+type PrefixFn = fn(parser: &mut Parser<'_>) -> ParseResult<WithSpan<Expression>>;
+type InfixFn =
+    fn(parser: &mut Parser<'_>, left: WithSpan<Expression>) -> ParseResult<WithSpan<Expression>>;
 
 #[derive(PartialEq, PartialOrd)]
 enum Precedence {
@@ -111,7 +112,7 @@ impl<'a> Parser<'a> {
         return Ok(program);
     }
 
-    fn parse_statement(&mut self) -> ParseResult<Statement> {
+    fn parse_statement(&mut self) -> ParseResult<WithSpan<Statement>> {
         match self.current_token.value {
             Token::Let => self.parse_let_statement(),
             Token::Return => self.parse_return_statement(),
@@ -119,7 +120,8 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_let_statement(&mut self) -> ParseResult<Statement> {
+    fn parse_let_statement(&mut self) -> ParseResult<WithSpan<Statement>> {
+        let left_span = self.current_token.span;
         let name = self.expect_peek_identifier()?;
 
         self.expect_peek(Token::Equal)?;
@@ -135,10 +137,13 @@ impl<'a> Parser<'a> {
             self.next_token();
         }
 
-        Ok(Statement::Let { name, value })
+        let total_span = Span::union_span(left_span, self.current_token.span);
+
+        Ok(WithSpan::new(Statement::Let { name, value }, total_span))
     }
 
-    fn parse_return_statement(&mut self) -> ParseResult<Statement> {
+    fn parse_return_statement(&mut self) -> ParseResult<WithSpan<Statement>> {
+        let left_span = self.current_token.span;
         // Consume the `return` token
         self.next_token();
 
@@ -150,10 +155,13 @@ impl<'a> Parser<'a> {
             self.next_token();
         }
 
-        Ok(Statement::Return { value })
+        let total_span = Span::union_span(left_span, self.current_token.span);
+
+        Ok(WithSpan::new(Statement::Return { value }, total_span))
     }
 
-    fn parse_expression_statement(&mut self) -> ParseResult<Statement> {
+    fn parse_expression_statement(&mut self) -> ParseResult<WithSpan<Statement>> {
+        let left_span = self.current_token.span;
         let expr = self.parse_expression(Precedence::Lowest)?;
 
         // Consume the semicolon at the end of the statement
@@ -162,10 +170,15 @@ impl<'a> Parser<'a> {
             self.next_token();
         }
 
-        Ok(Statement::Expression { expression: expr })
+        let total_span = Span::union_span(left_span, self.current_token.span);
+
+        Ok(WithSpan::new(
+            Statement::Expression { expression: expr },
+            total_span,
+        ))
     }
 
-    fn parse_expression(&mut self, precedence: Precedence) -> ParseResult<Expression> {
+    fn parse_expression(&mut self, precedence: Precedence) -> ParseResult<WithSpan<Expression>> {
         let mut left_expr;
 
         // Parse the current token (either as a prefix or as a literal)
@@ -225,7 +238,8 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_if_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
+    fn parse_if_expression(parser: &mut Parser<'_>) -> ParseResult<WithSpan<Expression>> {
+        let left_span = parser.current_token.span;
         // Consume the `if` token
         parser.next_token();
 
@@ -251,15 +265,23 @@ impl<'a> Parser<'a> {
             None
         };
 
-        Ok(Expression::If(Box::new(IfExpression {
-            condition,
-            consequence,
-            alternative,
-        })))
+        let total_span = Span::union_span(left_span, parser.current_token.span);
+
+        Ok(WithSpan::new(
+            Expression::If(Box::new(IfExpression {
+                condition,
+                consequence,
+                alternative,
+            })),
+            total_span,
+        ))
     }
 
-    fn parse_block_statement(&mut self) -> ParseResult<BlockStatement> {
+    fn parse_block_statement(&mut self) -> ParseResult<WithSpan<BlockStatement>> {
         let mut statements = Vec::new();
+
+        // Start on left brace
+        let left_span = self.current_token.span;
 
         // Consume the left brace
         self.next_token();
@@ -271,10 +293,16 @@ impl<'a> Parser<'a> {
             self.next_token();
         }
 
-        return Ok(BlockStatement { statements });
+        // Span ends on current token (right brace OR eof)
+        let total_span = Span::union_span(left_span, self.current_token.span);
+
+        // TODO: Maybe make this part of the while loop to avoid looping twice
+
+        return Ok(WithSpan::new(BlockStatement { statements }, total_span));
     }
 
-    fn parse_function_literal(parser: &mut Parser<'_>) -> ParseResult<Expression> {
+    fn parse_function_literal(parser: &mut Parser<'_>) -> ParseResult<WithSpan<Expression>> {
+        let left_span = parser.current_token.span;
         parser.expect_peek(Token::LeftParen)?;
 
         let parameters = parser.parse_function_parameters()?;
@@ -283,13 +311,15 @@ impl<'a> Parser<'a> {
 
         let body = parser.parse_block_statement()?;
 
-        return Ok(Expression::Function(Box::new(FunctionLiteral {
-            parameters,
-            body,
-        })));
+        let total_span = Span::union_span(left_span, parser.current_token.span);
+
+        return Ok(WithSpan::new(
+            Expression::Function(Box::new(FunctionLiteral { parameters, body })),
+            total_span,
+        ));
     }
 
-    fn parse_function_parameters(&mut self) -> ParseResult<Vec<IdentifierLiteral>> {
+    fn parse_function_parameters(&mut self) -> ParseResult<Vec<WithSpan<IdentifierLiteral>>> {
         let mut identifiers = Vec::new();
 
         // No parameters, parentheses close immediately
@@ -319,9 +349,12 @@ impl<'a> Parser<'a> {
         return Ok(identifiers);
     }
 
-    fn parse_identifier_as_literal(&mut self) -> ParseResult<IdentifierLiteral> {
+    fn parse_identifier_as_literal(&mut self) -> ParseResult<WithSpan<IdentifierLiteral>> {
         if let Token::Identifier(ref name) = self.current_token.value {
-            Ok(IdentifierLiteral::from(name.clone()))
+            Ok(WithSpan::new(
+                IdentifierLiteral::from(name.clone()),
+                self.current_token.span,
+            ))
         } else {
             Err(ParseError::Expected(
                 "identifier".to_string(),
@@ -330,14 +363,20 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_identifier_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
+    fn parse_identifier_expression(parser: &mut Parser<'_>) -> ParseResult<WithSpan<Expression>> {
         let identifier_literal = parser.parse_identifier_as_literal()?;
-        return Ok(Expression::Identifier(identifier_literal));
+        return Ok(WithSpan::new(
+            Expression::Identifier(identifier_literal.value),
+            identifier_literal.span,
+        ));
     }
 
-    fn parse_number_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
+    fn parse_number_expression(parser: &mut Parser<'_>) -> ParseResult<WithSpan<Expression>> {
         if let Token::Number(value) = parser.current_token.value {
-            Ok(Expression::Number(value))
+            Ok(WithSpan::new(
+                Expression::Number(value),
+                parser.current_token.span,
+            ))
         } else {
             Err(ParseError::Expected(
                 "number".to_string(),
@@ -346,10 +385,16 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_boolean_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
+    fn parse_boolean_expression(parser: &mut Parser<'_>) -> ParseResult<WithSpan<Expression>> {
         match parser.current_token.value {
-            Token::True => Ok(Expression::Boolean(true)),
-            Token::False => Ok(Expression::Boolean(false)),
+            Token::True => Ok(WithSpan::new(
+                Expression::Boolean(true),
+                parser.current_token.span,
+            )),
+            Token::False => Ok(WithSpan::new(
+                Expression::Boolean(false),
+                parser.current_token.span,
+            )),
             _ => Err(ParseError::Expected(
                 "boolean".to_string(),
                 parser.current_token.clone(),
@@ -357,9 +402,9 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_nil_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
+    fn parse_nil_expression(parser: &mut Parser<'_>) -> ParseResult<WithSpan<Expression>> {
         match parser.current_token.value {
-            Token::Nil => Ok(Expression::Nil),
+            Token::Nil => Ok(WithSpan::new(Expression::Nil, parser.current_token.span)),
             _ => Err(ParseError::Expected(
                 "nil".to_string(),
                 parser.current_token.clone(),
@@ -367,39 +412,53 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_grouped_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
+    fn parse_grouped_expression(parser: &mut Parser<'_>) -> ParseResult<WithSpan<Expression>> {
+        let left_span = parser.current_token.span;
         // Consume left parenthesis
         parser.next_token();
 
         // Parse the inside expression
-        let exp = parser.parse_expression(Precedence::Lowest);
+        let exp = parser.parse_expression(Precedence::Lowest)?;
 
         // Expect a right (closing) parenthesis
         parser.expect_peek(Token::RightParen)?;
 
-        return exp;
+        let total_span = Span::union_span(left_span, parser.current_token.span);
+
+        return Ok(WithSpan::new(exp.value, total_span));
     }
 
-    fn parse_prefix_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
+    fn parse_prefix_expression(parser: &mut Parser<'_>) -> ParseResult<WithSpan<Expression>> {
+        let left_span = parser.current_token.span;
         let operator = parser.current_token.clone();
         // Consume the operator token
         parser.next_token();
         let right = parser.parse_expression(Precedence::Prefix)?;
-        Ok(Expression::Prefix(Box::new(PrefixExpression {
-            operator,
-            right,
-        })))
+
+        let total_span = Span::union_span(left_span, right.span);
+
+        Ok(WithSpan::new(
+            Expression::Prefix(Box::new(PrefixExpression { operator, right })),
+            total_span,
+        ))
     }
 
-    fn parse_call_expression(parser: &mut Parser<'_>, left: Expression) -> ParseResult<Expression> {
+    fn parse_call_expression(
+        parser: &mut Parser<'_>,
+        left: WithSpan<Expression>,
+    ) -> ParseResult<WithSpan<Expression>> {
         let arguments = parser.parse_call_arguments()?;
-        Ok(Expression::Call(Box::new(CallExpression {
-            function: left,
-            arguments,
-        })))
+        let total_span = Span::union_span(left.span, parser.current_token.span);
+        Ok(WithSpan::new(
+            Expression::Call(Box::new(CallExpression {
+                function: left,
+                arguments,
+            })),
+            total_span,
+        ))
     }
 
-    fn parse_call_arguments(&mut self) -> ParseResult<Vec<Expression>> {
+    fn parse_call_arguments(&mut self) -> ParseResult<Vec<WithSpan<Expression>>> {
         let mut arguments = Vec::new();
 
         // No parameters, parentheses close immediately
@@ -430,19 +489,24 @@ impl<'a> Parser<'a> {
 
     fn parse_infix_expression(
         parser: &mut Parser<'_>,
-        left: Expression,
-    ) -> ParseResult<Expression> {
+        left: WithSpan<Expression>,
+    ) -> ParseResult<WithSpan<Expression>> {
         let operator = parser.current_token.clone();
         let precedence = parser.current_precedence();
         parser.next_token();
 
         let right = parser.parse_expression(precedence)?;
 
-        Ok(Expression::Infix(Box::new(InfixExpression {
-            left,
-            operator,
-            right,
-        })))
+        let total_span = Span::union_span(left.span, parser.current_token.span);
+
+        Ok(WithSpan::new(
+            Expression::Infix(Box::new(InfixExpression {
+                left,
+                operator,
+                right,
+            })),
+            total_span,
+        ))
     }
 
     fn next_token(&mut self) {
@@ -486,7 +550,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn expect_peek_identifier(&mut self) -> ParseResult<String> {
+    fn expect_peek_identifier(&mut self) -> ParseResult<WithSpan<IdentifierLiteral>> {
         let name = match &self.peek_token.value {
             Token::Identifier(name) => name.to_owned(),
             _ => {
@@ -498,12 +562,16 @@ impl<'a> Parser<'a> {
         };
 
         self.next_token();
-        Ok(name)
+        Ok(WithSpan::new(
+            IdentifierLiteral::from(name),
+            self.current_token.span,
+        ))
     }
 }
 
 #[cfg(test)]
 mod tests {
+    // TODO: Verify spans for each test (instead of just value)
     use crate::ast::{Expression, IdentifierLiteral, Program, Statement};
     use crate::lexer::Lexer;
     use crate::parser::Parser;
@@ -524,18 +592,18 @@ mod tests {
         for (input, expected_ident, expected_value) in tests {
             let prog = setup(input, 1);
 
-            match &prog.statements[0] {
-                Statement::Let { name, value } => {
+            match &prog.statements[0].value {
+                Statement::Let { name: ident, value } => {
                     assert_eq!(
-                        expected_ident, name,
+                        expected_ident, ident.value.name,
                         "expected identifier {} but got {}",
-                        expected_ident, name
+                        expected_ident, ident.value
                     );
 
                     assert_eq!(
-                        expected_value, *value,
+                        expected_value, value.value,
                         "expected value {} but got {}",
-                        expected_value, value
+                        expected_value, value.value
                     );
                 }
                 stmt => panic!("expected let statement but got {}", stmt),
@@ -557,12 +625,12 @@ mod tests {
         for (input, expected_value) in tests {
             let prog = setup(input, 1);
 
-            match &prog.statements[0] {
+            match &prog.statements[0].value {
                 Statement::Return { value } => {
                     assert_eq!(
-                        expected_value, *value,
+                        expected_value, value.value,
                         "expected value {} but got {}",
-                        expected_value, value
+                        expected_value, value.value
                     );
                 }
                 stmt => panic!("expected let statement but got {}", stmt),
@@ -636,7 +704,7 @@ mod tests {
                         "expected operator {} but got {}",
                         op, expr.operator.value,
                     );
-                    test_number_literal(&expr.right, right);
+                    test_number_literal(&expr.right.value, right);
                 }
                 expr => panic!("expected prefix expression but got {}", expr),
             }
@@ -663,7 +731,7 @@ mod tests {
                         "expected operator {} but got {}",
                         op, expr.operator.value,
                     );
-                    test_boolean_literal(&expr.right, right);
+                    test_boolean_literal(&expr.right.value, right);
                 }
                 expr => panic!("expected prefix expression but got {}", expr),
             }
@@ -691,13 +759,13 @@ mod tests {
 
             match expr {
                 Expression::Infix(expr) => {
-                    test_number_literal(&expr.left, left);
+                    test_number_literal(&expr.left.value, left);
                     assert_eq!(
                         op, expr.operator.value,
                         "expected operator {} but got {}",
                         op, expr.operator.value,
                     );
-                    test_number_literal(&expr.right, right);
+                    test_number_literal(&expr.right.value, right);
                 }
                 expr => panic!("expected prefix expression but got {}", expr),
             }
@@ -720,13 +788,13 @@ mod tests {
 
             match expr {
                 Expression::Infix(expr) => {
-                    test_boolean_literal(&expr.left, left);
+                    test_boolean_literal(&expr.left.value, left);
                     assert_eq!(
                         op, expr.operator.value,
                         "expected operator {} but got {}",
                         op, expr.operator.value,
                     );
-                    test_boolean_literal(&expr.right, right);
+                    test_boolean_literal(&expr.right.value, right);
                 }
                 expr => panic!("expected prefix expression but got {}", expr),
             }
@@ -783,12 +851,12 @@ mod tests {
 
         match expr {
             Expression::If(if_expr) => {
-                test_if_condition(&if_expr.condition, "x", Token::LessThan, "y");
+                test_if_condition(&if_expr.condition.value, "x", Token::LessThan, "y");
 
-                assert_eq!(if_expr.consequence.statements.len(), 1);
+                assert_eq!(if_expr.consequence.value.statements.len(), 1);
 
-                match &if_expr.consequence.statements.first().unwrap() {
-                    Statement::Expression { expression } => test_identifier(expression, "x"),
+                match &if_expr.consequence.value.statements.first().unwrap().value {
+                    Statement::Expression { expression } => test_identifier(&expression.value, "x"),
                     stmt => panic!("expected expression statement but got {:?}", stmt),
                 }
 
@@ -807,20 +875,22 @@ mod tests {
 
         match expr {
             Expression::If(if_expr) => {
-                test_if_condition(&if_expr.condition, "x", Token::LessThan, "y");
+                test_if_condition(&if_expr.condition.value, "x", Token::LessThan, "y");
 
-                assert_eq!(if_expr.consequence.statements.len(), 1);
+                assert_eq!(if_expr.consequence.value.statements.len(), 1);
 
-                match if_expr.consequence.statements.first().unwrap() {
-                    Statement::Expression { expression } => test_identifier(expression, "x"),
+                match &if_expr.consequence.value.statements.first().unwrap().value {
+                    Statement::Expression { expression } => test_identifier(&expression.value, "x"),
                     stmt => panic!("expected expression statement but got {:?}", stmt),
                 }
 
                 if let Some(alternative) = &if_expr.alternative {
-                    assert_eq!(alternative.statements.len(), 1);
+                    assert_eq!(alternative.value.statements.len(), 1);
 
-                    match alternative.statements.first().unwrap() {
-                        Statement::Expression { expression } => test_identifier(expression, "y"),
+                    match &alternative.value.statements.first().unwrap().value {
+                        Statement::Expression { expression } => {
+                            test_identifier(&expression.value, "y")
+                        }
                         stmt => panic!("expected expression statement but got {:?}", stmt),
                     }
                 } else {
@@ -846,17 +916,17 @@ mod tests {
                     "expected 2 parameters but got {:?}",
                     func.parameters
                 );
-                test_identifier_literal(&func.parameters[0], "x");
-                test_identifier_literal(&func.parameters[1], "y");
+                test_identifier_literal(&func.parameters[0].value, "x");
+                test_identifier_literal(&func.parameters[1].value, "y");
                 assert_eq!(
-                    func.body.statements.len(),
+                    func.body.value.statements.len(),
                     1,
                     "expected 1 body statement but got {:?}",
                     func.body
                 );
 
-                match func.body.statements.first().unwrap() {
-                    Statement::Expression { expression } => match expression {
+                match &func.body.value.statements.first().unwrap().value {
+                    Statement::Expression { expression } => match &expression.value {
                         Expression::Infix(infix) => {
                             assert_eq!(
                                 infix.operator.value,
@@ -864,8 +934,8 @@ mod tests {
                                 "expected + but got {}",
                                 infix.operator.value
                             );
-                            test_identifier(&infix.left, "x");
-                            test_identifier(&infix.right, "y");
+                            test_identifier(&infix.left.value, "x");
+                            test_identifier(&infix.right.value, "y");
                         }
                         stmt => panic!("expected infix expression but got {:?}", stmt),
                     },
@@ -901,7 +971,7 @@ mod tests {
                     );
 
                     for (ident, &expected_value) in func.parameters.iter().zip(expected.iter()) {
-                        test_identifier_literal(ident, expected_value);
+                        test_identifier_literal(&ident.value, expected_value);
                     }
                 }
                 expr => panic!("expected function literal expression but got {}", expr),
@@ -918,7 +988,7 @@ mod tests {
 
         match expr {
             Expression::Call(call) => {
-                test_identifier(&call.function, "add");
+                test_identifier(&call.function.value, "add");
                 assert_eq!(
                     call.arguments.len(),
                     2,
@@ -926,18 +996,18 @@ mod tests {
                     call.arguments
                 );
 
-                test_number_literal(&call.arguments[0], 1);
+                test_number_literal(&call.arguments[0].value, 1);
 
-                match &call.arguments[1] {
+                match &call.arguments[1].value {
                     Expression::Infix(expr) => {
-                        test_number_literal(&expr.left, 2);
+                        test_number_literal(&expr.left.value, 2);
                         assert_eq!(
                             Token::Star,
                             expr.operator.value,
                             "expected operator * but got {}",
                             expr.operator.value,
                         );
-                        test_number_literal(&expr.right, 3);
+                        test_number_literal(&expr.right.value, 3);
                     }
                     expr => panic!(
                         "expected prefix expression for second argument but got {}",
@@ -976,8 +1046,8 @@ mod tests {
     }
 
     fn unwrap_expression(prog: &Program) -> &Expression {
-        match prog.statements.first().unwrap() {
-            Statement::Expression { expression } => &expression,
+        match &prog.statements.first().unwrap().value {
+            Statement::Expression { expression } => &expression.value,
             stmt => panic!("{:?} isn't an expression statement", stmt),
         }
     }
@@ -1039,7 +1109,7 @@ mod tests {
     ) {
         match expr {
             Expression::Infix(infix) => {
-                test_identifier(&infix.left, expected_left_ident);
+                test_identifier(&infix.left.value, expected_left_ident);
 
                 assert_eq!(
                     infix.operator.value, expected_operator,
@@ -1047,7 +1117,7 @@ mod tests {
                     expected_operator, infix.operator.value
                 );
 
-                test_identifier(&infix.right, expected_right_ident);
+                test_identifier(&infix.right.value, expected_right_ident);
             }
             expr => panic!("expected infix expression (condition) but got {}", expr),
         }
