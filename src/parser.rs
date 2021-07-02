@@ -137,7 +137,7 @@ impl<'a> Parser<'a> {
             self.next_token();
         }
 
-        let total_span = Span::union_span(left_span, self.current_token.span);
+        let total_span = Span::union(left_span, self.current_token.span);
 
         Ok(WithSpan::new(Statement::Let { name, value }, total_span))
     }
@@ -155,7 +155,7 @@ impl<'a> Parser<'a> {
             self.next_token();
         }
 
-        let total_span = Span::union_span(left_span, self.current_token.span);
+        let total_span = Span::union(left_span, self.current_token.span);
 
         Ok(WithSpan::new(Statement::Return { value }, total_span))
     }
@@ -170,7 +170,7 @@ impl<'a> Parser<'a> {
             self.next_token();
         }
 
-        let total_span = Span::union_span(left_span, self.current_token.span);
+        let total_span = Span::union(left_span, self.current_token.span);
 
         Ok(WithSpan::new(
             Statement::Expression { expression: expr },
@@ -265,7 +265,7 @@ impl<'a> Parser<'a> {
             None
         };
 
-        let total_span = Span::union_span(left_span, parser.current_token.span);
+        let total_span = Span::union(left_span, parser.current_token.span);
 
         Ok(WithSpan::new(
             Expression::If(Box::new(IfExpression {
@@ -294,7 +294,7 @@ impl<'a> Parser<'a> {
         }
 
         // Span ends on current token (right brace OR eof)
-        let total_span = Span::union_span(left_span, self.current_token.span);
+        let total_span = Span::union(left_span, self.current_token.span);
 
         // TODO: Maybe make this part of the while loop to avoid looping twice
 
@@ -311,7 +311,7 @@ impl<'a> Parser<'a> {
 
         let body = parser.parse_block_statement()?;
 
-        let total_span = Span::union_span(left_span, parser.current_token.span);
+        let total_span = Span::union(left_span, parser.current_token.span);
 
         return Ok(WithSpan::new(
             Expression::Function(Box::new(FunctionLiteral { parameters, body })),
@@ -423,7 +423,7 @@ impl<'a> Parser<'a> {
         // Expect a right (closing) parenthesis
         parser.expect_peek(Token::RightParen)?;
 
-        let total_span = Span::union_span(left_span, parser.current_token.span);
+        let total_span = Span::union(left_span, parser.current_token.span);
 
         return Ok(WithSpan::new(exp.value, total_span));
     }
@@ -435,7 +435,7 @@ impl<'a> Parser<'a> {
         parser.next_token();
         let right = parser.parse_expression(Precedence::Prefix)?;
 
-        let total_span = Span::union_span(left_span, right.span);
+        let total_span = Span::union(left_span, right.span);
 
         Ok(WithSpan::new(
             Expression::Prefix(Box::new(PrefixExpression { operator, right })),
@@ -448,7 +448,7 @@ impl<'a> Parser<'a> {
         left: WithSpan<Expression>,
     ) -> ParseResult<WithSpan<Expression>> {
         let arguments = parser.parse_call_arguments()?;
-        let total_span = Span::union_span(left.span, parser.current_token.span);
+        let total_span = Span::union(left.span, parser.current_token.span);
         Ok(WithSpan::new(
             Expression::Call(Box::new(CallExpression {
                 function: left,
@@ -497,7 +497,7 @@ impl<'a> Parser<'a> {
 
         let right = parser.parse_expression(precedence)?;
 
-        let total_span = Span::union_span(left.span, parser.current_token.span);
+        let total_span = Span::union(left.span, parser.current_token.span);
 
         Ok(WithSpan::new(
             Expression::Infix(Box::new(InfixExpression {
@@ -575,35 +575,57 @@ mod tests {
     use crate::ast::{Expression, IdentifierLiteral, Program, Statement};
     use crate::lexer::Lexer;
     use crate::parser::Parser;
+    use crate::position::{Span, WithSpan};
     use crate::token::Token;
 
     #[test]
     fn let_statement() {
         let tests = vec![
-            ("let x = 5;", "x", Expression::Number(5)),
-            ("let y = true;", "y", Expression::Boolean(true)),
+            (
+                "let x = 5;",
+                WithSpan::new(IdentifierLiteral::from("x"), Span::new_unchecked(4, 5)),
+                WithSpan::new(Expression::Number(5), Span::new_unchecked(8, 9)),
+            ),
+            (
+                "let y = true;",
+                WithSpan::new(IdentifierLiteral::from("y"), Span::new_unchecked(4, 5)),
+                WithSpan::new(Expression::Boolean(true), Span::new_unchecked(8, 12)),
+            ),
             (
                 "let foobar = y;",
-                "foobar",
-                Expression::Identifier(IdentifierLiteral::from("y")),
+                WithSpan::new(
+                    IdentifierLiteral::from("foobar"),
+                    Span::new_unchecked(4, 10),
+                ),
+                WithSpan::new(
+                    Expression::Identifier(IdentifierLiteral::from("y")),
+                    Span::new_unchecked(13, 14),
+                ),
             ),
         ];
 
         for (input, expected_ident, expected_value) in tests {
             let prog = setup(input, 1);
 
+            let expected_stmt_span = Span::new_unchecked(0, input.len());
+            assert_eq!(
+                expected_stmt_span, prog.statements[0].span,
+                "expected statement with span {} but got {}",
+                expected_stmt_span, &prog.statements[0].span
+            );
+
             match &prog.statements[0].value {
                 Statement::Let { name: ident, value } => {
                     assert_eq!(
-                        expected_ident, ident.value.name,
-                        "expected identifier {} but got {}",
-                        expected_ident, ident.value
+                        expected_ident, *ident,
+                        "expected identifier {} at {} but got {} at {}",
+                        expected_ident.value, expected_ident.span, ident.value, ident.span
                     );
 
                     assert_eq!(
-                        expected_value, value.value,
-                        "expected value {} but got {}",
-                        expected_value, value.value
+                        expected_value, *value,
+                        "expected value {} at {} but got {} at {}",
+                        expected_value.value, expected_value.span, value.value, value.span
                     );
                 }
                 stmt => panic!("expected let statement but got {}", stmt),
@@ -614,23 +636,39 @@ mod tests {
     #[test]
     fn return_statement() {
         let tests = vec![
-            ("return 5;", Expression::Number(5)),
-            ("return true;", Expression::Boolean(true)),
+            (
+                "return 5;",
+                WithSpan::new(Expression::Number(5), Span::new_unchecked(7, 8)),
+            ),
+            (
+                "return true;",
+                WithSpan::new(Expression::Boolean(true), Span::new_unchecked(7, 11)),
+            ),
             (
                 "return y;",
-                Expression::Identifier(IdentifierLiteral::from("y")),
+                WithSpan::new(
+                    Expression::Identifier(IdentifierLiteral::from("y")),
+                    Span::new_unchecked(7, 8),
+                ),
             ),
         ];
 
         for (input, expected_value) in tests {
             let prog = setup(input, 1);
 
+            let expected_stmt_span = Span::new_unchecked(0, input.len());
+            assert_eq!(
+                expected_stmt_span, prog.statements[0].span,
+                "expected statement with span {} but got {}",
+                expected_stmt_span, &prog.statements[0].span
+            );
+
             match &prog.statements[0].value {
                 Statement::Return { value } => {
                     assert_eq!(
-                        expected_value, value.value,
-                        "expected value {} but got {}",
-                        expected_value, value.value
+                        expected_value, *value,
+                        "expected value {} at {} but got {} at {}",
+                        expected_value.value, expected_value.span, value.value, value.span
                     );
                 }
                 stmt => panic!("expected let statement but got {}", stmt),
@@ -640,71 +678,89 @@ mod tests {
 
     #[test]
     fn identifier_expression() {
-        let input = "foobar;";
+        let input = "foobar";
 
         let prog = setup(input, 1);
-        let expr = unwrap_expression(&prog);
+        let expr = unwrap_expression(&prog, input.len());
 
-        test_identifier(expr, "foobar");
+        test_identifier(expr, WithSpan::new("foobar", Span::new_unchecked(0, 6)));
     }
 
     #[test]
     fn number_expression() {
-        let input = "5;";
+        let input = "5";
 
         let prog = setup(input, 1);
-        let expr = unwrap_expression(&prog);
+        let expr = unwrap_expression(&prog, input.len());
 
-        test_number_literal(expr, 5);
+        test_number_literal(expr, WithSpan::new(5, Span::new_unchecked(0, 1)));
     }
 
     #[test]
     fn boolean_expression() {
         // Tests: (input, value)
-        let tests = vec![("true;", true), ("false;", false)];
+        let tests = vec![
+            ("true", WithSpan::new(true, Span::new_unchecked(0, 4))),
+            ("false", WithSpan::new(false, Span::new_unchecked(0, 5))),
+        ];
 
-        for (input, value) in tests {
+        for (input, expected_value) in tests {
             let prog = setup(input, 1);
-            let expr = unwrap_expression(&prog);
+            let expr = unwrap_expression(&prog, input.len());
 
-            test_boolean_literal(expr, value);
+            test_boolean_literal(expr, expected_value);
         }
     }
 
     #[test]
     fn nil_expression() {
-        let input = "nil;";
+        let input = "nil";
 
         let prog = setup(input, 1);
-        let expr = unwrap_expression(&prog);
+        let expr = unwrap_expression(&prog, input.len());
+
+        let expected_value = WithSpan::new(Expression::Nil, Span::new_unchecked(0, 3));
 
         assert_eq!(
-            Expression::Nil,
-            *expr,
-            "expected nil value but got {}",
-            expr
+            expected_value, *expr,
+            "expected {} value at {} but got {} at {}",
+            expected_value.value, expected_value.span, expr.value, expr.span
         );
     }
 
     #[test]
     fn prefix_number_expression() {
         // Tests: (input, operator, value)
-        let tests: Vec<(&str, Token, u64)> =
-            vec![("!5;", Token::Bang, 5), ("-15", Token::Minus, 15)];
+        let tests = vec![
+            (
+                "!5",
+                WithSpan::new(Token::Bang, Span::new_unchecked(0, 1)),
+                WithSpan::new(5, Span::new_unchecked(1, 2)),
+            ),
+            (
+                "-15",
+                WithSpan::new(Token::Minus, Span::new_unchecked(0, 1)),
+                WithSpan::new(15, Span::new_unchecked(1, 3)),
+            ),
+        ];
 
-        for (input, op, right) in tests {
+        for (input, expected_op, expected_right) in tests {
             let prog = setup(input, 1);
 
-            let expr = unwrap_expression(&prog);
+            let expr = unwrap_expression(&prog, input.len());
 
-            match expr {
+            match &expr.value {
                 Expression::Prefix(expr) => {
                     assert_eq!(
-                        op, expr.operator.value,
-                        "expected operator {} but got {}",
-                        op, expr.operator.value,
+                        expected_op,
+                        expr.operator,
+                        "expected operator {} at {} but got {} at {}",
+                        expected_op.value,
+                        expected_op.span,
+                        expr.operator.value,
+                        expr.operator.span,
                     );
-                    test_number_literal(&expr.right.value, right);
+                    test_number_literal(&expr.right, expected_right);
                 }
                 expr => panic!("expected prefix expression but got {}", expr),
             }
@@ -714,24 +770,35 @@ mod tests {
     #[test]
     fn prefix_boolean_expression() {
         // Tests: (input, operator, value)
-        let tests: Vec<(&str, Token, bool)> = vec![
-            ("!true;", Token::Bang, true),
-            ("!false", Token::Bang, false),
+        let tests = vec![
+            (
+                "!true",
+                WithSpan::new(Token::Bang, Span::new_unchecked(0, 1)),
+                WithSpan::new(true, Span::new_unchecked(1, 5)),
+            ),
+            (
+                "!false",
+                WithSpan::new(Token::Bang, Span::new_unchecked(0, 1)),
+                WithSpan::new(false, Span::new_unchecked(1, 6)),
+            ),
         ];
 
-        for (input, op, right) in tests {
+        for (input, expected_op, expected_right) in tests {
             let prog = setup(input, 1);
 
-            let expr = unwrap_expression(&prog);
-
-            match expr {
+            let expr = unwrap_expression(&prog, input.len());
+            match &expr.value {
                 Expression::Prefix(expr) => {
                     assert_eq!(
-                        op, expr.operator.value,
-                        "expected operator {} but got {}",
-                        op, expr.operator.value,
+                        expected_op,
+                        expr.operator,
+                        "expected operator {} at {} but got {} at {}",
+                        expected_op.value,
+                        expected_op.span,
+                        expr.operator.value,
+                        expr.operator.span,
                     );
-                    test_boolean_literal(&expr.right.value, right);
+                    test_boolean_literal(&expr.right, expected_right);
                 }
                 expr => panic!("expected prefix expression but got {}", expr),
             }
@@ -741,31 +808,75 @@ mod tests {
     #[test]
     fn infix_number_expression() {
         // Tests: (input, left_value, operator, right_value)
-        let tests: Vec<(&str, u64, Token, u64)> = vec![
-            ("5 + 5;", 5, Token::Plus, 5),
-            ("5 - 5;", 5, Token::Minus, 5),
-            ("5 * 5;", 5, Token::Star, 5),
-            ("5 / 5;", 5, Token::Slash, 5),
-            ("5 > 5;", 5, Token::GreaterThan, 5),
-            ("5 < 5;", 5, Token::LessThan, 5),
-            ("5 == 5;", 5, Token::EqualEqual, 5),
-            ("5 != 5;", 5, Token::BangEqual, 5),
+        let tests = vec![
+            (
+                "5 + 5",
+                WithSpan::new(5, Span::new_unchecked(0, 1)),
+                WithSpan::new(Token::Plus, Span::new_unchecked(2, 3)),
+                WithSpan::new(5, Span::new_unchecked(4, 5)),
+            ),
+            (
+                "5 - 5",
+                WithSpan::new(5, Span::new_unchecked(0, 1)),
+                WithSpan::new(Token::Minus, Span::new_unchecked(2, 3)),
+                WithSpan::new(5, Span::new_unchecked(4, 5)),
+            ),
+            (
+                "5 * 5",
+                WithSpan::new(5, Span::new_unchecked(0, 1)),
+                WithSpan::new(Token::Star, Span::new_unchecked(2, 3)),
+                WithSpan::new(5, Span::new_unchecked(4, 5)),
+            ),
+            (
+                "5 / 5",
+                WithSpan::new(5, Span::new_unchecked(0, 1)),
+                WithSpan::new(Token::Slash, Span::new_unchecked(2, 3)),
+                WithSpan::new(5, Span::new_unchecked(4, 5)),
+            ),
+            (
+                "5 > 5",
+                WithSpan::new(5, Span::new_unchecked(0, 1)),
+                WithSpan::new(Token::GreaterThan, Span::new_unchecked(2, 3)),
+                WithSpan::new(5, Span::new_unchecked(4, 5)),
+            ),
+            (
+                "5 < 5",
+                WithSpan::new(5, Span::new_unchecked(0, 1)),
+                WithSpan::new(Token::LessThan, Span::new_unchecked(2, 3)),
+                WithSpan::new(5, Span::new_unchecked(4, 5)),
+            ),
+            (
+                "5 == 5",
+                WithSpan::new(5, Span::new_unchecked(0, 1)),
+                WithSpan::new(Token::EqualEqual, Span::new_unchecked(2, 4)),
+                WithSpan::new(5, Span::new_unchecked(5, 6)),
+            ),
+            (
+                "5 != 5",
+                WithSpan::new(5, Span::new_unchecked(0, 1)),
+                WithSpan::new(Token::BangEqual, Span::new_unchecked(2, 4)),
+                WithSpan::new(5, Span::new_unchecked(5, 6)),
+            ),
         ];
 
-        for (input, left, op, right) in tests {
+        for (input, expected_left, expected_op, expected_right) in tests {
             let prog = setup(input, 1);
 
-            let expr = unwrap_expression(&prog);
+            let expr = unwrap_expression(&prog, input.len());
 
-            match expr {
+            match &expr.value {
                 Expression::Infix(expr) => {
-                    test_number_literal(&expr.left.value, left);
+                    test_number_literal(&expr.left, expected_left);
                     assert_eq!(
-                        op, expr.operator.value,
-                        "expected operator {} but got {}",
-                        op, expr.operator.value,
+                        expected_op,
+                        expr.operator,
+                        "expected operator {} at {} but got {} at {}",
+                        expected_op.value,
+                        expected_op.span,
+                        expr.operator.value,
+                        expr.operator.span,
                     );
-                    test_number_literal(&expr.right.value, right);
+                    test_number_literal(&expr.right, expected_right);
                 }
                 expr => panic!("expected prefix expression but got {}", expr),
             }
@@ -775,26 +886,39 @@ mod tests {
     #[test]
     fn infix_boolean_expression() {
         // Tests: (input, left_value, operator, right_value)
-        let tests: Vec<(&str, bool, Token, bool)> = vec![
-            ("true == true", true, Token::EqualEqual, true),
-            ("true != false", true, Token::BangEqual, false),
-            ("false == false", false, Token::EqualEqual, false),
+        let tests = vec![
+            (
+                "true == true",
+                WithSpan::new(true, Span::new_unchecked(0, 4)),
+                WithSpan::new(Token::EqualEqual, Span::new_unchecked(5, 7)),
+                WithSpan::new(true, Span::new_unchecked(8, 12)),
+            ),
+            (
+                "true != false",
+                WithSpan::new(true, Span::new_unchecked(0, 4)),
+                WithSpan::new(Token::BangEqual, Span::new_unchecked(5, 7)),
+                WithSpan::new(false, Span::new_unchecked(8, 13)),
+            ),
         ];
 
-        for (input, left, op, right) in tests {
+        for (input, expected_left, expected_op, expected_right) in tests {
             let prog = setup(input, 1);
 
-            let expr = unwrap_expression(&prog);
+            let expr = unwrap_expression(&prog, input.len());
 
-            match expr {
+            match &expr.value {
                 Expression::Infix(expr) => {
-                    test_boolean_literal(&expr.left.value, left);
+                    test_boolean_literal(&expr.left, expected_left);
                     assert_eq!(
-                        op, expr.operator.value,
-                        "expected operator {} but got {}",
-                        op, expr.operator.value,
+                        expected_op,
+                        expr.operator,
+                        "expected operator {} at {} but got {} at {}",
+                        expected_op.value,
+                        expected_op.span,
+                        expr.operator.value,
+                        expr.operator.span,
                     );
-                    test_boolean_literal(&expr.right.value, right);
+                    test_boolean_literal(&expr.right, expected_right);
                 }
                 expr => panic!("expected prefix expression but got {}", expr),
             }
@@ -847,16 +971,31 @@ mod tests {
         let input = "if x < y { x }";
 
         let prog = setup(input, 1);
-        let expr = unwrap_expression(&prog);
+        let expr = unwrap_expression(&prog, input.len());
 
-        match expr {
+        match &expr.value {
             Expression::If(if_expr) => {
-                test_if_condition(&if_expr.condition.value, "x", Token::LessThan, "y");
+                test_if_condition(
+                    &if_expr.condition,
+                    WithSpan::new("x", Span::new_unchecked(3, 4)),
+                    WithSpan::new(Token::LessThan, Span::new_unchecked(5, 6)),
+                    WithSpan::new("y", Span::new_unchecked(7, 8)),
+                );
+
+                let expected_consequence_span = Span::new_unchecked(9, 14);
+                assert_eq!(
+                    expected_consequence_span, if_expr.consequence.span,
+                    "expected if consequence's span at {} but got {}",
+                    expected_consequence_span, if_expr.consequence.span
+                );
 
                 assert_eq!(if_expr.consequence.value.statements.len(), 1);
 
                 match &if_expr.consequence.value.statements.first().unwrap().value {
-                    Statement::Expression { expression } => test_identifier(&expression.value, "x"),
+                    Statement::Expression { expression } => test_identifier(
+                        &expression,
+                        WithSpan::new("x", Span::new_unchecked(11, 12)),
+                    ),
                     stmt => panic!("expected expression statement but got {:?}", stmt),
                 }
 
@@ -871,26 +1010,27 @@ mod tests {
         let input = "if x < y { x } else { y }";
 
         let prog = setup(input, 1);
-        let expr = unwrap_expression(&prog);
+        let expr = unwrap_expression(&prog, input.len());
 
-        match expr {
+        match &expr.value {
             Expression::If(if_expr) => {
-                test_if_condition(&if_expr.condition.value, "x", Token::LessThan, "y");
-
-                assert_eq!(if_expr.consequence.value.statements.len(), 1);
-
-                match &if_expr.consequence.value.statements.first().unwrap().value {
-                    Statement::Expression { expression } => test_identifier(&expression.value, "x"),
-                    stmt => panic!("expected expression statement but got {:?}", stmt),
-                }
+                // NOTE: Not testing consequence because already done by if_expression()
 
                 if let Some(alternative) = &if_expr.alternative {
+                    let expected_alternative_span = Span::new_unchecked(20, 25);
+                    assert_eq!(
+                        expected_alternative_span, alternative.span,
+                        "expected if alternative's span at {} but got {}",
+                        expected_alternative_span, alternative.span
+                    );
+
                     assert_eq!(alternative.value.statements.len(), 1);
 
                     match &alternative.value.statements.first().unwrap().value {
-                        Statement::Expression { expression } => {
-                            test_identifier(&expression.value, "y")
-                        }
+                        Statement::Expression { expression } => test_identifier(
+                            &expression,
+                            WithSpan::new("y", Span::new_unchecked(22, 23)),
+                        ),
                         stmt => panic!("expected expression statement but got {:?}", stmt),
                     }
                 } else {
@@ -906,9 +1046,9 @@ mod tests {
         let input = "fn(x, y) { x + y; }";
 
         let prog = setup(input, 1);
-        let expr = unwrap_expression(&prog);
+        let expr = unwrap_expression(&prog, input.len());
 
-        match expr {
+        match &expr.value {
             Expression::Function(func) => {
                 assert_eq!(
                     func.parameters.len(),
@@ -916,8 +1056,22 @@ mod tests {
                     "expected 2 parameters but got {:?}",
                     func.parameters
                 );
-                test_identifier_literal(&func.parameters[0].value, "x");
-                test_identifier_literal(&func.parameters[1].value, "y");
+                test_identifier_literal(
+                    &func.parameters[0],
+                    WithSpan::new("x", Span::new_unchecked(3, 4)),
+                );
+                test_identifier_literal(
+                    &func.parameters[1],
+                    WithSpan::new("y", Span::new_unchecked(6, 7)),
+                );
+
+                let expected_body_span = Span::new_unchecked(9, 19);
+                assert_eq!(
+                    expected_body_span, func.body.span,
+                    "expected body span at {} but got {}",
+                    expected_body_span, func.body.span
+                );
+
                 assert_eq!(
                     func.body.value.statements.len(),
                     1,
@@ -928,14 +1082,25 @@ mod tests {
                 match &func.body.value.statements.first().unwrap().value {
                     Statement::Expression { expression } => match &expression.value {
                         Expression::Infix(infix) => {
-                            assert_eq!(
-                                infix.operator.value,
-                                Token::Plus,
-                                "expected + but got {}",
-                                infix.operator.value
+                            test_identifier(
+                                &infix.left,
+                                WithSpan::new("x", Span::new_unchecked(11, 12)),
                             );
-                            test_identifier(&infix.left.value, "x");
-                            test_identifier(&infix.right.value, "y");
+                            let expected_op =
+                                WithSpan::new(Token::Plus, Span::new_unchecked(13, 14));
+                            assert_eq!(
+                                expected_op,
+                                infix.operator,
+                                "expected operator {} at {} but got {} at {}",
+                                expected_op.value,
+                                expected_op.span,
+                                infix.operator.value,
+                                infix.operator.span,
+                            );
+                            test_identifier(
+                                &infix.right,
+                                WithSpan::new("y", Span::new_unchecked(15, 16)),
+                            );
                         }
                         stmt => panic!("expected infix expression but got {:?}", stmt),
                     },
@@ -952,15 +1117,18 @@ mod tests {
         #[rustfmt::skip]
         let tests = vec![
             ("fn() {}", vec![]),
-            ("fn(x) {}", vec!["x"]),
-            ("fn(x, y, z) {}", vec!["x", "y", "z"])
+            ("fn(x) {}", vec![
+                WithSpan::new("x", Span::new_unchecked(3, 4))
+                ]),
+            ("fn(x, y, z) {}", vec![
+                WithSpan::new("x", Span::new_unchecked(3, 4)), WithSpan::new("y", Span::new_unchecked(6, 7)), WithSpan::new("z", Span::new_unchecked(9, 10))])
         ];
 
         for (input, expected) in tests {
             let prog = setup(input, 0);
-            let expr = unwrap_expression(&prog);
+            let expr = unwrap_expression(&prog, input.len());
 
-            match expr {
+            match &expr.value {
                 Expression::Function(func) => {
                     assert_eq!(
                         expected.len(),
@@ -970,8 +1138,8 @@ mod tests {
                         func.parameters
                     );
 
-                    for (ident, &expected_value) in func.parameters.iter().zip(expected.iter()) {
-                        test_identifier_literal(&ident.value, expected_value);
+                    for (ident, expected_value) in func.parameters.iter().zip(expected.iter()) {
+                        test_identifier_literal(&ident, expected_value.clone());
                     }
                 }
                 expr => panic!("expected function literal expression but got {}", expr),
@@ -984,11 +1152,14 @@ mod tests {
         let input = "add(1, 2 * 3)";
 
         let prog = setup(input, 1);
-        let expr = unwrap_expression(&prog);
+        let expr = unwrap_expression(&prog, input.len());
 
-        match expr {
+        match &expr.value {
             Expression::Call(call) => {
-                test_identifier(&call.function.value, "add");
+                test_identifier(
+                    &call.function,
+                    WithSpan::new("add", Span::new_unchecked(0, 3)),
+                );
                 assert_eq!(
                     call.arguments.len(),
                     2,
@@ -996,18 +1167,33 @@ mod tests {
                     call.arguments
                 );
 
-                test_number_literal(&call.arguments[0].value, 1);
+                test_number_literal(
+                    &call.arguments[0],
+                    WithSpan::new(1, Span::new_unchecked(4, 5)),
+                );
 
                 match &call.arguments[1].value {
-                    Expression::Infix(expr) => {
-                        test_number_literal(&expr.left.value, 2);
-                        assert_eq!(
-                            Token::Star,
-                            expr.operator.value,
-                            "expected operator * but got {}",
-                            expr.operator.value,
+                    Expression::Infix(infix) => {
+                        test_number_literal(
+                            &infix.left,
+                            WithSpan::new(2, Span::new_unchecked(7, 8)),
                         );
-                        test_number_literal(&expr.right.value, 3);
+
+                        let expected_op = WithSpan::new(Token::Star, Span::new_unchecked(9, 10));
+                        assert_eq!(
+                            expected_op,
+                            infix.operator,
+                            "expected operator {} at {} but got {} at {}",
+                            expected_op.value,
+                            expected_op.span,
+                            infix.operator.value,
+                            infix.operator.span,
+                        );
+
+                        test_number_literal(
+                            &infix.right,
+                            WithSpan::new(3, Span::new_unchecked(11, 12)),
+                        );
                     }
                     expr => panic!(
                         "expected prefix expression for second argument but got {}",
@@ -1045,79 +1231,126 @@ mod tests {
         }
     }
 
-    fn unwrap_expression(prog: &Program) -> &Expression {
-        match &prog.statements.first().unwrap().value {
-            Statement::Expression { expression } => &expression.value,
+    fn unwrap_expression(prog: &Program, length: usize) -> &WithSpan<Expression> {
+        let expr = match &prog.statements.first().unwrap().value {
+            Statement::Expression { expression } => expression,
             stmt => panic!("{:?} isn't an expression statement", stmt),
-        }
-    }
+        };
 
-    fn test_identifier(expr: &Expression, expected_value: &str) {
-        match expr {
-            Expression::Identifier(ident) => {
-                test_identifier_literal(ident, expected_value);
-            }
-            _ => panic!("expected identifier {} but got {}", expected_value, expr),
-        }
-    }
-
-    fn test_identifier_literal(ident: &IdentifierLiteral, expected_value: &str) {
+        let expected_expr_span = Span::new_unchecked(0, length);
         assert_eq!(
-            expected_value, ident.name,
-            "expected identifier with name {} but got {}",
-            expected_value, ident.name
+            expected_expr_span, expr.span,
+            "expected expression with span {} but got {}",
+            expected_expr_span, expr.span
         );
+
+        expr
     }
 
-    fn test_number_literal(expr: &Expression, expected_value: u64) {
-        match expr {
-            Expression::Number(num) => {
+    fn test_identifier(expr: &WithSpan<Expression>, expected_value: WithSpan<&str>) {
+        match &expr.value {
+            Expression::Identifier(ident) => {
                 assert_eq!(
-                    expected_value, *num,
-                    "expected {} but got {}",
-                    expected_value, num
-                )
+                    expected_value.value, ident.name,
+                    "expected identifier with name {} but got {}",
+                    expected_value.value, ident.name
+                );
+
+                assert_eq!(
+                    expected_value.span, expr.span,
+                    "expected identifier's span at {} but got {}",
+                    expected_value.span, expr.span
+                );
             }
             _ => panic!(
-                "expected number literal {} but got {}",
-                expected_value, expr
+                "expected identifier {} but got {}",
+                expected_value.value, expr.value
             ),
         }
     }
 
-    fn test_boolean_literal(expr: &Expression, expected_value: bool) {
-        match expr {
-            Expression::Boolean(num) => {
+    fn test_identifier_literal(
+        ident: &WithSpan<IdentifierLiteral>,
+        expected_value: WithSpan<&str>,
+    ) {
+        assert_eq!(
+            expected_value.value, ident.value.name,
+            "expected identifier with name {} but got {}",
+            expected_value.value, ident.value.name
+        );
+
+        assert_eq!(
+            expected_value.span, ident.span,
+            "expected identifier's span at {} but got {}",
+            expected_value.span, ident.span
+        );
+    }
+
+    fn test_number_literal(expr: &WithSpan<Expression>, expected_value: WithSpan<u64>) {
+        match expr.value {
+            Expression::Number(value) => {
                 assert_eq!(
-                    expected_value, *num,
-                    "expected {} but got {}",
-                    expected_value, num
-                )
+                    expected_value.value, value,
+                    "expected number {} but got {}",
+                    expected_value.value, value
+                );
+
+                assert_eq!(
+                    expected_value.span, expr.span,
+                    "expected number's span at {} but got {}",
+                    expected_value.span, expr.span,
+                );
+            }
+            _ => panic!(
+                "expected number literal {} but got {}",
+                expected_value.value, expr.value
+            ),
+        }
+    }
+
+    fn test_boolean_literal(expr: &WithSpan<Expression>, expected_value: WithSpan<bool>) {
+        match expr.value {
+            Expression::Boolean(value) => {
+                assert_eq!(
+                    expected_value.value, value,
+                    "expected boolean {} but got {}",
+                    expected_value.value, value
+                );
+
+                assert_eq!(
+                    expected_value.span, expr.span,
+                    "expected boolean's span at {} but got {}",
+                    expected_value.span, expr.span,
+                );
             }
             _ => panic!(
                 "expected boolean literal {} but got {}",
-                expected_value, expr
+                expected_value.value, expr.value
             ),
         }
     }
 
     fn test_if_condition(
-        expr: &Expression,
-        expected_left_ident: &str,
-        expected_operator: Token,
-        expected_right_ident: &str,
+        expr: &WithSpan<Expression>,
+        expected_left_ident: WithSpan<&str>,
+        expected_operator: WithSpan<Token>,
+        expected_right_ident: WithSpan<&str>,
     ) {
-        match expr {
+        match &expr.value {
             Expression::Infix(infix) => {
-                test_identifier(&infix.left.value, expected_left_ident);
+                test_identifier(&infix.left, expected_left_ident);
 
                 assert_eq!(
-                    infix.operator.value, expected_operator,
-                    "expected {} operator but got {}",
-                    expected_operator, infix.operator.value
+                    infix.operator,
+                    expected_operator,
+                    "expected {} operator at {} but got {} at {}",
+                    expected_operator.value,
+                    expected_operator.span,
+                    infix.operator.value,
+                    infix.operator.span
                 );
 
-                test_identifier(&infix.right.value, expected_right_ident);
+                test_identifier(&infix.right, expected_right_ident);
             }
             expr => panic!("expected infix expression (condition) but got {}", expr),
         }

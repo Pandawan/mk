@@ -184,24 +184,6 @@ mod tests {
     }
 
     #[test]
-    fn test_spans() {
-        let input = "abc 12 + return";
-        let expected_spans = [
-            Span::new(BytePos::new(0), BytePos::new(3)),
-            Span::new(BytePos::new(4), BytePos::new(6)),
-            Span::new(BytePos::new(7), BytePos::new(8)),
-            Span::new(BytePos::new(9), BytePos::new(15)),
-        ];
-        let tokens = tokenize(input);
-
-        assert_eq!(expected_spans.len(), tokens.len());
-
-        for (token, &expected_span) in tokens.iter().zip(expected_spans.iter()) {
-            assert_eq!(token.span, expected_span);
-        }
-    }
-
-    #[test]
     fn test_spans_eof() {
         let input = "1";
         let mut lex = Lexer::new(input);
@@ -209,105 +191,130 @@ mod tests {
         // Skip the `1`
         lex.next_token();
 
-        let final_span = Span::new(BytePos::new(1), BytePos::new(1));
+        let final_span = Span::new_unchecked(1, 1);
         // Make sure that the span does not change upon hitting eof
         assert_eq!(lex.next_token().span, final_span);
         // Make sure that the span does not change upon hitting eof
-        assert_eq!(
-            lex.next_token().span,
-            Span::new(BytePos::new(1), BytePos::new(1))
-        );
+        assert_eq!(lex.next_token().span, Span::new_unchecked(1, 1));
     }
 
     #[test]
     fn test_operators() {
-        let input = "+-*/=! ==!=<><=>=";
+        let input = "+ - * / = ! < > == != <= >=";
+        let expected_tokens = vec![
+            WithSpan::new(Token::Plus, Span::new_unchecked(0, 1)),
+            WithSpan::new(Token::Minus, Span::new_unchecked(2, 3)),
+            WithSpan::new(Token::Star, Span::new_unchecked(4, 5)),
+            WithSpan::new(Token::Slash, Span::new_unchecked(6, 7)),
+            WithSpan::new(Token::Equal, Span::new_unchecked(8, 9)),
+            WithSpan::new(Token::Bang, Span::new_unchecked(10, 11)),
+            WithSpan::new(Token::LessThan, Span::new_unchecked(12, 13)),
+            WithSpan::new(Token::GreaterThan, Span::new_unchecked(14, 15)),
+            WithSpan::new(Token::EqualEqual, Span::new_unchecked(16, 18)),
+            WithSpan::new(Token::BangEqual, Span::new_unchecked(19, 21)),
+            WithSpan::new(Token::LessEqual, Span::new_unchecked(22, 24)),
+            WithSpan::new(Token::GreaterEqual, Span::new_unchecked(25, 27)),
+        ];
 
-        assert_eq!(
-            tokenize(input)
-                .iter()
-                .map(|t| t.value.clone())
-                .collect::<Vec<Token>>(),
-            vec![
-                Token::Plus,
-                Token::Minus,
-                Token::Star,
-                Token::Slash,
-                Token::Equal,
-                Token::Bang,
-                Token::EqualEqual,
-                Token::BangEqual,
-                Token::LessThan,
-                Token::GreaterThan,
-                Token::LessEqual,
-                Token::GreaterEqual,
-            ]
-        )
+        let tokens = tokenize(input);
+
+        for (token, expected_token) in tokens.iter().zip(expected_tokens.iter()) {
+            assert_eq!(
+                token, expected_token,
+                "expected {} at {} but got {} at {}",
+                expected_token.value, expected_token.span, token.value, token.span,
+            )
+        }
     }
 
     #[test]
     fn test_delimiters() {
-        let input = ",;(){}";
+        let input = ", ; ( ) { }";
+        let expected_tokens = vec![
+            WithSpan::new(Token::Comma, Span::new_unchecked(0, 1)),
+            WithSpan::new(Token::Semicolon, Span::new_unchecked(2, 3)),
+            WithSpan::new(Token::LeftParen, Span::new_unchecked(4, 5)),
+            WithSpan::new(Token::RightParen, Span::new_unchecked(6, 7)),
+            WithSpan::new(Token::LeftBrace, Span::new_unchecked(8, 9)),
+            WithSpan::new(Token::RightBrace, Span::new_unchecked(10, 11)),
+        ];
 
-        assert_eq!(
-            tokenize(input)
-                .iter()
-                .map(|t| t.value.clone())
-                .collect::<Vec<Token>>(),
-            vec![
-                Token::Comma,
-                Token::Semicolon,
-                Token::LeftParen,
-                Token::RightParen,
-                Token::LeftBrace,
-                Token::RightBrace,
-            ]
-        )
+        let tokens = tokenize(input);
+
+        for (token, expected_token) in tokens.iter().zip(expected_tokens.iter()) {
+            assert_eq!(
+                token, expected_token,
+                "expected {} at {} but got {} at {}",
+                expected_token.value, expected_token.span, token.value, token.span,
+            )
+        }
     }
 
     #[test]
     fn test_identifier() {
         let input = "hello _world _hello_world_";
-
-        assert_eq!(
-            tokenize(input)
-                .iter()
-                .map(|t| t.value.clone())
-                .collect::<Vec<Token>>(),
-            vec![
+        let expected_tokens = vec![
+            WithSpan::new(
                 Token::Identifier("hello".to_owned()),
+                Span::new_unchecked(0, 5),
+            ),
+            WithSpan::new(
                 Token::Identifier("_world".to_owned()),
-                Token::Identifier("_hello_world_".to_owned())
-            ]
-        )
+                Span::new_unchecked(6, 12),
+            ),
+            WithSpan::new(
+                Token::Identifier("_hello_world_".to_owned()),
+                Span::new_unchecked(13, 26),
+            ),
+        ];
+
+        let tokens = tokenize(input);
+
+        for (token, expected_token) in tokens.iter().zip(expected_tokens.iter()) {
+            assert_eq!(
+                token, expected_token,
+                "expected {} at {} but got {} at {}",
+                expected_token.value, expected_token.span, token.value, token.span,
+            )
+        }
     }
 
     #[test]
     fn test_number() {
         let input = "012312";
         let mut lex = Lexer::new(input);
-        assert_eq!(lex.next_token().value, Token::Number(12312));
+        let token = lex.next_token();
+        let expected_token = WithSpan::new(Token::Number(12312), Span::new_unchecked(0, 6));
+        assert_eq!(
+            token, expected_token,
+            "expected {} at {} but got {} at {}",
+            expected_token.value, expected_token.span, token.value, token.span,
+        );
     }
 
     #[test]
     fn test_keywords() {
-        let input = "true false fn let if else return";
+        let input = "true false nil fn let if else return";
+        let expected_tokens = vec![
+            WithSpan::new(Token::True, Span::new_unchecked(0, 4)),
+            WithSpan::new(Token::False, Span::new_unchecked(5, 10)),
+            WithSpan::new(Token::Nil, Span::new_unchecked(11, 14)),
+            WithSpan::new(Token::Fn, Span::new_unchecked(15, 17)),
+            WithSpan::new(Token::Let, Span::new_unchecked(18, 21)),
+            WithSpan::new(Token::If, Span::new_unchecked(22, 24)),
+            WithSpan::new(Token::Else, Span::new_unchecked(25, 29)),
+            WithSpan::new(Token::Return, Span::new_unchecked(30, 36)),
+        ];
 
-        assert_eq!(
-            tokenize(input)
-                .iter()
-                .map(|t| t.value.clone())
-                .collect::<Vec<Token>>(),
-            vec![
-                Token::True,
-                Token::False,
-                Token::Fn,
-                Token::Let,
-                Token::If,
-                Token::Else,
-                Token::Return,
-            ]
-        )
+        let tokens = tokenize(input);
+
+        for (token, expected_token) in tokens.iter().zip(expected_tokens.iter()) {
+            assert_eq!(
+                token, expected_token,
+                "expected {} at {} but got {} at {}",
+                expected_token.value, expected_token.span, token.value, token.span,
+            )
+        }
     }
 
     #[test]

@@ -4,10 +4,6 @@ use std::{cmp, fmt::Display};
 pub struct BytePos(usize);
 
 impl BytePos {
-    pub fn new(pos: usize) -> Self {
-        Self(pos)
-    }
-
     pub fn shift(self, ch: char) -> Self {
         Self(self.0 + ch.len_utf8())
     }
@@ -33,7 +29,15 @@ impl Span {
         Self { start, end }
     }
 
-    pub fn union_span(a: Self, b: Self) -> Self {
+    #[cfg(test)]
+    pub const fn new_unchecked(start: usize, end: usize) -> Self {
+        Self {
+            start: BytePos(start),
+            end: BytePos(end),
+        }
+    }
+
+    pub fn union(a: Self, b: Self) -> Self {
         Self::new(cmp::min(a.start, b.start), cmp::max(a.end, b.end))
     }
 }
