@@ -4,30 +4,37 @@ use crate::ast::{
     BlockStatement, CallExpression, Expression, FunctionLiteral, IdentifierLiteral, IfExpression,
     InfixExpression, PrefixExpression, Program, Statement,
 };
+use crate::position::WithSpan;
 use crate::{lexer::Lexer, token::Token};
 
 #[derive(Debug)]
 pub enum ParseError {
-    Unexpected(Token),
+    Unexpected(WithSpan<Token>),
     // TODO: Might want to use TokenKind to allow for Expected(TokenKind, Token)
-    Expected(String, Token),
+    Expected(String, WithSpan<Token>),
 
-    InvalidPrefixFn(Token),
+    InvalidPrefixFn(WithSpan<Token>),
 }
 
 impl Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ParseError::Unexpected(token) => write!(f, "Unexpected token {}", token),
+            ParseError::Unexpected(token) => {
+                write!(f, "Unexpected token {} at {}", token.value, token.span)
+            }
             ParseError::Expected(expected, got) => {
                 write!(
                     f,
-                    "Expected next token to be {}, but got {} instead",
-                    expected, got
+                    "Expected next token to be {}, but got {} instead at {}",
+                    expected, got.value, got.span
                 )
             }
             ParseError::InvalidPrefixFn(token) => {
-                write!(f, "No prefix parsing function found for token {}", token)
+                write!(
+                    f,
+                    "No prefix parsing function found for token {} at {}",
+                    token.value, token.span
+                )
             }
         }
     }
@@ -70,8 +77,8 @@ impl Precedence {
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
 
-    current_token: Token,
-    peek_token: Token,
+    current_token: WithSpan<Token>,
+    peek_token: WithSpan<Token>,
 }
 
 impl<'a> Parser<'a> {
@@ -89,7 +96,7 @@ impl<'a> Parser<'a> {
         let mut program = Program::new();
         let mut errors: Vec<ParseError> = Vec::new();
 
-        while self.current_token != Token::Eof {
+        while self.current_token.value != Token::Eof {
             match self.parse_statement() {
                 Ok(statement) => program.statements.push(statement),
                 Err(error) => errors.push(error),
@@ -105,7 +112,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_statement(&mut self) -> ParseResult<Statement> {
-        match self.current_token {
+        match self.current_token.value {
             Token::Let => self.parse_let_statement(),
             Token::Return => self.parse_return_statement(),
             _ => self.parse_expression_statement(),
@@ -162,7 +169,7 @@ impl<'a> Parser<'a> {
         let mut left_expr;
 
         // Parse the current token (either as a prefix or as a literal)
-        if let Some(prefix_fn) = self.get_prefix_fn(&self.current_token) {
+        if let Some(prefix_fn) = self.get_prefix_fn(&self.current_token.value) {
             left_expr = prefix_fn(self)?;
         } else {
             return Err(ParseError::InvalidPrefixFn(self.current_token.clone()));
@@ -173,7 +180,7 @@ impl<'a> Parser<'a> {
 
         while !self.peek_token_is(&Token::Semicolon) && precedence < self.peek_precedence() {
             // Check if the peek token is an operator (and has an infix function)
-            if let Some(infix_fn) = self.get_infix_fn(&self.peek_token) {
+            if let Some(infix_fn) = self.get_infix_fn(&self.peek_token.value) {
                 // Move the infix operator to be current_token
                 self.next_token();
                 // Parse the infix expression
@@ -313,7 +320,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_identifier_as_literal(&mut self) -> ParseResult<IdentifierLiteral> {
-        if let Token::Identifier(ref name) = self.current_token {
+        if let Token::Identifier(ref name) = self.current_token.value {
             Ok(IdentifierLiteral::from(name.clone()))
         } else {
             Err(ParseError::Expected(
@@ -329,7 +336,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_number_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
-        if let Token::Number(value) = parser.current_token {
+        if let Token::Number(value) = parser.current_token.value {
             Ok(Expression::Number(value))
         } else {
             Err(ParseError::Expected(
@@ -340,7 +347,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_boolean_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
-        match parser.current_token {
+        match parser.current_token.value {
             Token::True => Ok(Expression::Boolean(true)),
             Token::False => Ok(Expression::Boolean(false)),
             _ => Err(ParseError::Expected(
@@ -351,7 +358,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_nil_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
-        match parser.current_token {
+        match parser.current_token.value {
             Token::Nil => Ok(Expression::Nil),
             _ => Err(ParseError::Expected(
                 "nil".to_string(),
@@ -444,27 +451,27 @@ impl<'a> Parser<'a> {
     }
 
     fn current_token_is(&self, token: Token) -> bool {
-        match (&token, &self.current_token) {
+        match (&token, &self.current_token.value) {
             (Token::Identifier(_), Token::Identifier(_)) => true,
             (Token::Number(_), Token::Number(_)) => true,
-            _ => token == self.current_token,
+            _ => token == self.current_token.value,
         }
     }
 
     fn peek_token_is(&self, token: &Token) -> bool {
-        match (&token, &self.peek_token) {
+        match (&token, &self.peek_token.value) {
             (Token::Identifier(_), Token::Identifier(_)) => true,
             (Token::Number(_), Token::Number(_)) => true,
-            _ => token == &self.peek_token,
+            _ => token == &self.peek_token.value,
         }
     }
 
     fn current_precedence(&self) -> Precedence {
-        Precedence::token_precedence(&self.current_token)
+        Precedence::token_precedence(&self.current_token.value)
     }
 
     fn peek_precedence(&self) -> Precedence {
-        Precedence::token_precedence(&self.peek_token)
+        Precedence::token_precedence(&self.peek_token.value)
     }
 
     fn expect_peek(&mut self, token: Token) -> ParseResult<()> {
@@ -480,7 +487,7 @@ impl<'a> Parser<'a> {
     }
 
     fn expect_peek_identifier(&mut self) -> ParseResult<String> {
-        let name = match &self.peek_token {
+        let name = match &self.peek_token.value {
             Token::Identifier(name) => name.to_owned(),
             _ => {
                 return Err(ParseError::Expected(
@@ -625,9 +632,9 @@ mod tests {
             match expr {
                 Expression::Prefix(expr) => {
                     assert_eq!(
-                        op, expr.operator,
+                        op, expr.operator.value,
                         "expected operator {} but got {}",
-                        op, expr.operator,
+                        op, expr.operator.value,
                     );
                     test_number_literal(&expr.right, right);
                 }
@@ -652,9 +659,9 @@ mod tests {
             match expr {
                 Expression::Prefix(expr) => {
                     assert_eq!(
-                        op, expr.operator,
+                        op, expr.operator.value,
                         "expected operator {} but got {}",
-                        op, expr.operator,
+                        op, expr.operator.value,
                     );
                     test_boolean_literal(&expr.right, right);
                 }
@@ -686,9 +693,9 @@ mod tests {
                 Expression::Infix(expr) => {
                     test_number_literal(&expr.left, left);
                     assert_eq!(
-                        op, expr.operator,
+                        op, expr.operator.value,
                         "expected operator {} but got {}",
-                        op, expr.operator,
+                        op, expr.operator.value,
                     );
                     test_number_literal(&expr.right, right);
                 }
@@ -715,9 +722,9 @@ mod tests {
                 Expression::Infix(expr) => {
                     test_boolean_literal(&expr.left, left);
                     assert_eq!(
-                        op, expr.operator,
+                        op, expr.operator.value,
                         "expected operator {} but got {}",
-                        op, expr.operator,
+                        op, expr.operator.value,
                     );
                     test_boolean_literal(&expr.right, right);
                 }
@@ -852,10 +859,10 @@ mod tests {
                     Statement::Expression { expression } => match expression {
                         Expression::Infix(infix) => {
                             assert_eq!(
-                                infix.operator,
+                                infix.operator.value,
                                 Token::Plus,
                                 "expected + but got {}",
-                                infix.operator
+                                infix.operator.value
                             );
                             test_identifier(&infix.left, "x");
                             test_identifier(&infix.right, "y");
@@ -926,9 +933,9 @@ mod tests {
                         test_number_literal(&expr.left, 2);
                         assert_eq!(
                             Token::Star,
-                            expr.operator,
+                            expr.operator.value,
                             "expected operator * but got {}",
-                            expr.operator,
+                            expr.operator.value,
                         );
                         test_number_literal(&expr.right, 3);
                     }
@@ -1034,12 +1041,11 @@ mod tests {
             Expression::Infix(infix) => {
                 test_identifier(&infix.left, expected_left_ident);
 
-                if infix.operator != expected_operator {
-                    panic!(
-                        "expected {} operator but got {}",
-                        expected_operator, infix.operator
-                    );
-                }
+                assert_eq!(
+                    infix.operator.value, expected_operator,
+                    "expected {} operator but got {}",
+                    expected_operator, infix.operator.value
+                );
 
                 test_identifier(&infix.right, expected_right_ident);
             }

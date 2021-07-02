@@ -1,4 +1,4 @@
-use crate::token::Token;
+use crate::{position::WithSpan, token::Token};
 use std::fmt::Display;
 
 pub struct Program {
@@ -131,20 +131,20 @@ impl From<String> for IdentifierLiteral {
 
 #[derive(Debug, PartialEq)]
 pub struct PrefixExpression {
-    pub operator: Token,
+    pub operator: WithSpan<Token>,
     pub right: Expression,
 }
 
 impl Display for PrefixExpression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({op}{r})", op = self.operator, r = self.right)
+        write!(f, "({op}{r})", op = self.operator.value, r = self.right)
     }
 }
 
 #[derive(Debug, PartialEq)]
 pub struct InfixExpression {
     pub left: Expression,
-    pub operator: Token,
+    pub operator: WithSpan<Token>,
     pub right: Expression,
 }
 
@@ -154,7 +154,7 @@ impl Display for InfixExpression {
             f,
             "({l} {op} {r})",
             l = self.left,
-            op = self.operator,
+            op = self.operator.value,
             r = self.right
         )
     }

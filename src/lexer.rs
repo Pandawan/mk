@@ -1,22 +1,29 @@
 use std::iter::Peekable;
 use std::str::Chars;
 
+use crate::position::{BytePos, Span, WithSpan};
 use crate::token::Token;
 
 pub struct Lexer<'a> {
+    current_position: BytePos,
     input_iter: Peekable<Chars<'a>>,
 }
 
 impl<'a> Lexer<'a> {
     pub fn new(input: &'a str) -> Lexer<'a> {
         Lexer {
+            current_position: BytePos::default(),
             input_iter: input.chars().peekable(),
         }
     }
 
     /// Consume the next character from the list.
     fn read_char(&mut self) -> Option<char> {
-        self.input_iter.next()
+        let next = self.input_iter.next();
+        if let Some(c) = next {
+            self.current_position = self.current_position.shift(c);
+        }
+        next
     }
 
     /// Get the next character from the list without consuming it.
@@ -82,10 +89,12 @@ impl<'a> Lexer<'a> {
     }
 
     /// Read a new token from the characters list.
-    pub fn next_token(&mut self) -> Token {
+    pub fn next_token(&mut self) -> WithSpan<Token> {
         self.skip_whitespace();
 
-        if let Some(c) = self.read_char() {
+        let initial_position = self.current_position;
+
+        let tok = if let Some(c) = self.read_char() {
             match c {
                 '+' => Token::Plus,
                 '-' => Token::Minus,
@@ -139,7 +148,9 @@ impl<'a> Lexer<'a> {
             }
         } else {
             Token::Eof
-        }
+        };
+
+        WithSpan::new(tok, Span::new(initial_position, self.current_position))
     }
 }
 
@@ -154,77 +165,155 @@ fn is_identifier_char(c: char) -> bool {
 #[cfg(test)]
 mod tests {
     use crate::lexer::Lexer;
+    use crate::position::{BytePos, Span, WithSpan};
     use crate::token::Token;
+
+    fn tokenize(input: &str) -> Vec<WithSpan<Token>> {
+        let mut lex = Lexer::new(input);
+        let mut tokens = Vec::new();
+
+        loop {
+            let tok = lex.next_token();
+
+            if tok.value == Token::Eof {
+                return tokens;
+            } else {
+                tokens.push(tok);
+            }
+        }
+    }
+
+    #[test]
+    fn test_spans() {
+        let input = "abc 12 + return";
+        let expected_spans = [
+            Span::new(BytePos::new(0), BytePos::new(3)),
+            Span::new(BytePos::new(4), BytePos::new(6)),
+            Span::new(BytePos::new(7), BytePos::new(8)),
+            Span::new(BytePos::new(9), BytePos::new(15)),
+        ];
+        let tokens = tokenize(input);
+
+        assert_eq!(expected_spans.len(), tokens.len());
+
+        for (token, &expected_span) in tokens.iter().zip(expected_spans.iter()) {
+            assert_eq!(token.span, expected_span);
+        }
+    }
+
+    #[test]
+    fn test_spans_eof() {
+        let input = "1";
+        let mut lex = Lexer::new(input);
+
+        // Skip the `1`
+        lex.next_token();
+
+        let final_span = Span::new(BytePos::new(1), BytePos::new(1));
+        // Make sure that the span does not change upon hitting eof
+        assert_eq!(lex.next_token().span, final_span);
+        // Make sure that the span does not change upon hitting eof
+        assert_eq!(
+            lex.next_token().span,
+            Span::new(BytePos::new(1), BytePos::new(1))
+        );
+    }
 
     #[test]
     fn test_operators() {
         let input = "+-*/=! ==!=<><=>=";
-        let mut lex = Lexer::new(input);
 
-        assert_eq!(lex.next_token(), Token::Plus);
-        assert_eq!(lex.next_token(), Token::Minus);
-        assert_eq!(lex.next_token(), Token::Star);
-        assert_eq!(lex.next_token(), Token::Slash);
-        assert_eq!(lex.next_token(), Token::Equal);
-        assert_eq!(lex.next_token(), Token::Bang);
-
-        assert_eq!(lex.next_token(), Token::EqualEqual);
-        assert_eq!(lex.next_token(), Token::BangEqual);
-        assert_eq!(lex.next_token(), Token::LessThan);
-        assert_eq!(lex.next_token(), Token::GreaterThan);
-        assert_eq!(lex.next_token(), Token::LessEqual);
-        assert_eq!(lex.next_token(), Token::GreaterEqual);
+        assert_eq!(
+            tokenize(input)
+                .iter()
+                .map(|t| t.value.clone())
+                .collect::<Vec<Token>>(),
+            vec![
+                Token::Plus,
+                Token::Minus,
+                Token::Star,
+                Token::Slash,
+                Token::Equal,
+                Token::Bang,
+                Token::EqualEqual,
+                Token::BangEqual,
+                Token::LessThan,
+                Token::GreaterThan,
+                Token::LessEqual,
+                Token::GreaterEqual,
+            ]
+        )
     }
 
     #[test]
     fn test_delimiters() {
         let input = ",;(){}";
-        let mut lex = Lexer::new(input);
 
-        assert_eq!(lex.next_token(), Token::Comma);
-        assert_eq!(lex.next_token(), Token::Semicolon);
-        assert_eq!(lex.next_token(), Token::LeftParen);
-        assert_eq!(lex.next_token(), Token::RightParen);
-        assert_eq!(lex.next_token(), Token::LeftBrace);
-        assert_eq!(lex.next_token(), Token::RightBrace);
+        assert_eq!(
+            tokenize(input)
+                .iter()
+                .map(|t| t.value.clone())
+                .collect::<Vec<Token>>(),
+            vec![
+                Token::Comma,
+                Token::Semicolon,
+                Token::LeftParen,
+                Token::RightParen,
+                Token::LeftBrace,
+                Token::RightBrace,
+            ]
+        )
     }
 
     #[test]
     fn test_identifier() {
         let input = "hello _world _hello_world_";
-        let mut lex = Lexer::new(input);
-        assert_eq!(lex.next_token(), Token::Identifier("hello".to_owned()));
-        assert_eq!(lex.next_token(), Token::Identifier("_world".to_owned()));
+
         assert_eq!(
-            lex.next_token(),
-            Token::Identifier("_hello_world_".to_owned())
-        );
+            tokenize(input)
+                .iter()
+                .map(|t| t.value.clone())
+                .collect::<Vec<Token>>(),
+            vec![
+                Token::Identifier("hello".to_owned()),
+                Token::Identifier("_world".to_owned()),
+                Token::Identifier("_hello_world_".to_owned())
+            ]
+        )
     }
 
     #[test]
     fn test_number() {
         let input = "012312";
         let mut lex = Lexer::new(input);
-        assert_eq!(lex.next_token(), Token::Number(12312));
+        assert_eq!(lex.next_token().value, Token::Number(12312));
     }
 
     #[test]
     fn test_keywords() {
-        let input = "true false func let if else return";
-        let mut lex = Lexer::new(input);
-        assert_eq!(lex.next_token(), Token::True);
-        assert_eq!(lex.next_token(), Token::False);
-        assert_eq!(lex.next_token(), Token::Fn);
-        assert_eq!(lex.next_token(), Token::Let);
-        assert_eq!(lex.next_token(), Token::If);
-        assert_eq!(lex.next_token(), Token::Else);
-        assert_eq!(lex.next_token(), Token::Return);
+        let input = "true false fn let if else return";
+
+        assert_eq!(
+            tokenize(input)
+                .iter()
+                .map(|t| t.value.clone())
+                .collect::<Vec<Token>>(),
+            vec![
+                Token::True,
+                Token::False,
+                Token::Fn,
+                Token::Let,
+                Token::If,
+                Token::Else,
+                Token::Return,
+            ]
+        )
     }
 
     #[test]
     fn test_eof() {
         let input = "";
         let mut lex = Lexer::new(input);
-        assert_eq!(lex.next_token(), Token::Eof)
+        assert_eq!(lex.next_token().value, Token::Eof);
     }
 }
