@@ -9,7 +9,6 @@ use crate::{lexer::Lexer, token::Token};
 
 #[derive(Debug)]
 pub enum ParseError {
-    Unexpected(WithSpan<Token>),
     // TODO: Might want to use TokenKind to allow for Expected(TokenKind, Token)
     Expected(String, WithSpan<Token>),
 
@@ -19,21 +18,18 @@ pub enum ParseError {
 impl Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ParseError::Unexpected(token) => {
-                write!(f, "Unexpected token {} at {}", token.value, token.span)
-            }
             ParseError::Expected(expected, got) => {
                 write!(
                     f,
-                    "Expected next token to be {}, but got {} instead at {}",
-                    expected, got.value, got.span
+                    "Expected next token to be {}, but got {} instead",
+                    expected, got.value
                 )
             }
             ParseError::InvalidPrefixFn(token) => {
                 write!(
                     f,
-                    "No prefix parsing function found for token {} at {}",
-                    token.value, token.span
+                    "No prefix parsing function found for token {}",
+                    token.value
                 )
             }
         }
@@ -295,8 +291,6 @@ impl<'a> Parser<'a> {
 
         // Span ends on current token (right brace OR eof)
         let total_span = Span::union(left_span, self.current_token.span);
-
-        // TODO: Maybe make this part of the while loop to avoid looping twice
 
         return Ok(WithSpan::new(BlockStatement { statements }, total_span));
     }
@@ -571,7 +565,7 @@ impl<'a> Parser<'a> {
 
 #[cfg(test)]
 mod tests {
-    // TODO: Verify spans for each test (instead of just value)
+    // TODO: Cleanup tests? Don't check for span everywhere, only those specific to the current test
     use crate::ast::{Expression, IdentifierLiteral, Program, Statement};
     use crate::lexer::Lexer;
     use crate::parser::Parser;

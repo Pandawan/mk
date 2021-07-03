@@ -67,4 +67,11 @@ impl<T> WithSpan<T> {
             span: Span::new(BytePos(0), BytePos(0)),
         }
     }
+
+    pub fn with_source(&self, src: &str) -> String {
+        src.chars()
+            .skip(self.span.start.0)
+            .take(self.span.end.0 - self.span.start.0)
+            .collect::<String>()
+    }
 }

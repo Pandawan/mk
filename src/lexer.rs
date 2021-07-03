@@ -6,6 +6,7 @@ use crate::token::Token;
 
 pub struct Lexer<'a> {
     current_position: BytePos,
+    // TODO: Change this to CharIndices so I don't have to keep track of current_position
     input_iter: Peekable<Chars<'a>>,
 }
 
