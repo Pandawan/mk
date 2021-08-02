@@ -38,26 +38,23 @@ impl<'a> Lexer<'a> {
 
     /// Read the current and following characters as a number token.
     fn read_number(&mut self, first: char) -> Token {
-        // Convert the first digit to a number
-        let mut number: u64 = u64::from(
-            first
-                .to_digit(10)
-                .expect("Only digit characters should be matched"),
-        );
+        // TODO: Allow decimal numbers (f64)
+
+        let mut s = String::new();
+
+        // Add the first digit
+        s.push(first);
+
+        // Keep adding until next character is not a digit
         while let Some(&ch) = self.peek_char() {
             if is_digit(ch) {
-                number = number * 10
-                    + u64::from(
-                        self.read_char()
-                            .unwrap()
-                            .to_digit(10)
-                            .expect("Only digit characters should be matched"),
-                    );
+                s.push(self.read_char().unwrap());
             } else {
                 break;
             }
         }
-        return Token::Number(number);
+        // TODO: Proper error message
+        return Token::Integer(s.parse().unwrap());
     }
 
     fn read_identifier_or_keyword(&mut self, first: char) -> Token {
@@ -205,7 +202,7 @@ mod tests {
     fn test_number() {
         let input = "012312";
         let mut lex = Lexer::new(input);
-        assert_eq!(lex.next_token(), Token::Number(12312));
+        assert_eq!(lex.next_token(), Token::Integer(12312));
     }
 
     #[test]

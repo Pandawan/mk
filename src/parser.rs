@@ -191,7 +191,7 @@ impl<'a> Parser<'a> {
             Token::Fn => Some(Parser::parse_function_literal),
 
             Token::Identifier(_) => Some(Parser::parse_identifier_expression),
-            Token::Number(_) => Some(Parser::parse_number_expression),
+            Token::Integer(_) => Some(Parser::parse_number_expression),
             Token::True | Token::False => Some(Parser::parse_boolean_expression),
             Token::Nil => Some(Parser::parse_nil_expression),
 
@@ -329,8 +329,8 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_number_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
-        if let Token::Number(value) = parser.current_token {
-            Ok(Expression::Number(value))
+        if let Token::Integer(value) = parser.current_token {
+            Ok(Expression::Integer(value))
         } else {
             Err(ParseError::Expected(
                 "number".to_string(),
@@ -446,7 +446,7 @@ impl<'a> Parser<'a> {
     fn current_token_is(&self, token: Token) -> bool {
         match (&token, &self.current_token) {
             (Token::Identifier(_), Token::Identifier(_)) => true,
-            (Token::Number(_), Token::Number(_)) => true,
+            (Token::Integer(_), Token::Integer(_)) => true,
             _ => token == self.current_token,
         }
     }
@@ -454,7 +454,7 @@ impl<'a> Parser<'a> {
     fn peek_token_is(&self, token: &Token) -> bool {
         match (&token, &self.peek_token) {
             (Token::Identifier(_), Token::Identifier(_)) => true,
-            (Token::Number(_), Token::Number(_)) => true,
+            (Token::Integer(_), Token::Integer(_)) => true,
             _ => token == &self.peek_token,
         }
     }
@@ -505,7 +505,7 @@ mod tests {
     #[test]
     fn let_statement() {
         let tests = vec![
-            ("let x = 5;", "x", Expression::Number(5)),
+            ("let x = 5;", "x", Expression::Integer(5)),
             ("let y = true;", "y", Expression::Boolean(true)),
             (
                 "let foobar = y;",
@@ -539,7 +539,7 @@ mod tests {
     #[test]
     fn return_statement() {
         let tests = vec![
-            ("return 5;", Expression::Number(5)),
+            ("return 5;", Expression::Integer(5)),
             ("return true;", Expression::Boolean(true)),
             (
                 "return y;",
@@ -614,7 +614,7 @@ mod tests {
     #[test]
     fn prefix_number_expression() {
         // Tests: (input, operator, value)
-        let tests: Vec<(&str, Token, u64)> =
+        let tests: Vec<(&str, Token, i64)> =
             vec![("!5;", Token::Bang, 5), ("-15", Token::Minus, 15)];
 
         for (input, op, right) in tests {
@@ -666,7 +666,7 @@ mod tests {
     #[test]
     fn infix_number_expression() {
         // Tests: (input, left_value, operator, right_value)
-        let tests: Vec<(&str, u64, Token, u64)> = vec![
+        let tests: Vec<(&str, i64, Token, i64)> = vec![
             ("5 + 5;", 5, Token::Plus, 5),
             ("5 - 5;", 5, Token::Minus, 5),
             ("5 * 5;", 5, Token::Star, 5),
@@ -992,9 +992,9 @@ mod tests {
         );
     }
 
-    fn test_number_literal(expr: &Expression, expected_value: u64) {
+    fn test_number_literal(expr: &Expression, expected_value: i64) {
         match expr {
-            Expression::Number(num) => {
+            Expression::Integer(num) => {
                 assert_eq!(
                     expected_value, *num,
                     "expected {} but got {}",

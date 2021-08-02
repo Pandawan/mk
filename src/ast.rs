@@ -16,7 +16,7 @@ impl Program {
 impl Display for Program {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for statement in &self.statements {
-            write!(f, "{}", statement)?;
+            writeln!(f, "{}", statement)?;
         }
         Ok(())
     }
@@ -75,7 +75,7 @@ impl Display for BlockStatement {
 pub enum Expression {
     // Literal
     Identifier(IdentifierLiteral),
-    Number(u64),
+    Integer(i64),
     Boolean(bool),
     Nil,
 
@@ -91,7 +91,7 @@ impl Display for Expression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Identifier(name) => write!(f, "{}", name),
-            Self::Number(value) => write!(f, "{}", value),
+            Self::Integer(value) => write!(f, "{}", value),
             Self::Boolean(value) => write!(f, "{}", value),
             Self::Nil => write!(f, "nil"),
 
