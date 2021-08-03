@@ -29,6 +29,7 @@ pub enum Token {
     // Identifiers & Literals
     Identifier(String),
     Integer(i64),
+    Float(f64),
 
     // Keywords
     True,
@@ -86,7 +87,10 @@ impl fmt::Display for Token {
             Token::RightBrace => write!(f, "}}"),
 
             Token::Identifier(name) => write!(f, "{}", name),
-            Token::Integer(val) => write!(f, "{}", val),
+            Token::Integer(value) => write!(f, "{}", value),
+            /* TODO: This may not always print the correct value.
+            e.g. `1.0` will print `1` */
+            Token::Float(value) => write!(f, "{}", value),
 
             Token::True => write!(f, "true"),
             Token::False => write!(f, "false"),

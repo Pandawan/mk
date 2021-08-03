@@ -191,7 +191,8 @@ impl<'a> Parser<'a> {
             Token::Fn => Some(Parser::parse_function_literal),
 
             Token::Identifier(_) => Some(Parser::parse_identifier_expression),
-            Token::Integer(_) => Some(Parser::parse_number_expression),
+            Token::Integer(_) => Some(Parser::parse_integer_expression),
+            Token::Float(_) => Some(Parser::parse_float_expression),
             Token::True | Token::False => Some(Parser::parse_boolean_expression),
             Token::Nil => Some(Parser::parse_nil_expression),
 
@@ -328,12 +329,23 @@ impl<'a> Parser<'a> {
         return Ok(Expression::Identifier(identifier_literal));
     }
 
-    fn parse_number_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
+    fn parse_integer_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
         if let Token::Integer(value) = parser.current_token {
             Ok(Expression::Integer(value))
         } else {
             Err(ParseError::Expected(
-                "number".to_string(),
+                "integer".to_string(),
+                parser.current_token.clone(),
+            ))
+        }
+    }
+
+    fn parse_float_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
+        if let Token::Float(value) = parser.current_token {
+            Ok(Expression::Float(value))
+        } else {
+            Err(ParseError::Expected(
+                "float".to_string(),
                 parser.current_token.clone(),
             ))
         }
@@ -574,13 +586,23 @@ mod tests {
     }
 
     #[test]
-    fn number_expression() {
+    fn integer_expression() {
         let input = "5;";
 
         let prog = setup(input, 1);
         let expr = unwrap_expression(&prog);
 
-        test_number_literal(expr, 5);
+        test_integer_literal(expr, 5);
+    }
+
+    #[test]
+    fn float_expression() {
+        let input = "5.5;";
+
+        let prog = setup(input, 1);
+        let expr = unwrap_expression(&prog);
+
+        test_float_literal(expr, 5.5);
     }
 
     #[test]
@@ -612,7 +634,7 @@ mod tests {
     }
 
     #[test]
-    fn prefix_number_expression() {
+    fn prefix_integer_expression() {
         // Tests: (input, operator, value)
         let tests: Vec<(&str, Token, i64)> =
             vec![("!5;", Token::Bang, 5), ("-15", Token::Minus, 15)];
@@ -629,7 +651,32 @@ mod tests {
                         "expected operator {} but got {}",
                         op, expr.operator,
                     );
-                    test_number_literal(&expr.right, right);
+                    test_integer_literal(&expr.right, right);
+                }
+                expr => panic!("expected prefix expression but got {}", expr),
+            }
+        }
+    }
+
+    #[test]
+    fn prefix_float_expression() {
+        // Tests: (input, operator, value)
+        let tests: Vec<(&str, Token, f64)> =
+            vec![("!5.5;", Token::Bang, 5.5), ("-15.5", Token::Minus, 15.5)];
+
+        for (input, op, right) in tests {
+            let prog = setup(input, 1);
+
+            let expr = unwrap_expression(&prog);
+
+            match expr {
+                Expression::Prefix(expr) => {
+                    assert_eq!(
+                        op, expr.operator,
+                        "expected operator {} but got {}",
+                        op, expr.operator,
+                    );
+                    test_float_literal(&expr.right, right);
                 }
                 expr => panic!("expected prefix expression but got {}", expr),
             }
@@ -664,7 +711,7 @@ mod tests {
     }
 
     #[test]
-    fn infix_number_expression() {
+    fn infix_integer_expression() {
         // Tests: (input, left_value, operator, right_value)
         let tests: Vec<(&str, i64, Token, i64)> = vec![
             ("5 + 5;", 5, Token::Plus, 5),
@@ -684,13 +731,47 @@ mod tests {
 
             match expr {
                 Expression::Infix(expr) => {
-                    test_number_literal(&expr.left, left);
+                    test_integer_literal(&expr.left, left);
                     assert_eq!(
                         op, expr.operator,
                         "expected operator {} but got {}",
                         op, expr.operator,
                     );
-                    test_number_literal(&expr.right, right);
+                    test_integer_literal(&expr.right, right);
+                }
+                expr => panic!("expected prefix expression but got {}", expr),
+            }
+        }
+    }
+
+    #[test]
+    fn infix_float_expression() {
+        // Tests: (input, left_value, operator, right_value)
+        let tests: Vec<(&str, f64, Token, f64)> = vec![
+            ("5.5 + 5.5;", 5.5, Token::Plus, 5.5),
+            ("5.5 - 5.5;", 5.5, Token::Minus, 5.5),
+            ("5.5 * 5.5;", 5.5, Token::Star, 5.5),
+            ("5.5 / 5.5;", 5.5, Token::Slash, 5.5),
+            ("5.5 > 5.5;", 5.5, Token::GreaterThan, 5.5),
+            ("5.5 < 5.5;", 5.5, Token::LessThan, 5.5),
+            ("5.5 == 5.5;", 5.5, Token::EqualEqual, 5.5),
+            ("5.5 != 5.5;", 5.5, Token::BangEqual, 5.5),
+        ];
+
+        for (input, left, op, right) in tests {
+            let prog = setup(input, 1);
+
+            let expr = unwrap_expression(&prog);
+
+            match expr {
+                Expression::Infix(expr) => {
+                    test_float_literal(&expr.left, left);
+                    assert_eq!(
+                        op, expr.operator,
+                        "expected operator {} but got {}",
+                        op, expr.operator,
+                    );
+                    test_float_literal(&expr.right, right);
                 }
                 expr => panic!("expected prefix expression but got {}", expr),
             }
@@ -919,18 +1000,18 @@ mod tests {
                     call.arguments
                 );
 
-                test_number_literal(&call.arguments[0], 1);
+                test_integer_literal(&call.arguments[0], 1);
 
                 match &call.arguments[1] {
                     Expression::Infix(expr) => {
-                        test_number_literal(&expr.left, 2);
+                        test_integer_literal(&expr.left, 2);
                         assert_eq!(
                             Token::Star,
                             expr.operator,
                             "expected operator * but got {}",
                             expr.operator,
                         );
-                        test_number_literal(&expr.right, 3);
+                        test_integer_literal(&expr.right, 3);
                     }
                     expr => panic!(
                         "expected prefix expression for second argument but got {}",
@@ -992,7 +1073,7 @@ mod tests {
         );
     }
 
-    fn test_number_literal(expr: &Expression, expected_value: i64) {
+    fn test_integer_literal(expr: &Expression, expected_value: i64) {
         match expr {
             Expression::Integer(num) => {
                 assert_eq!(
@@ -1002,9 +1083,22 @@ mod tests {
                 )
             }
             _ => panic!(
-                "expected number literal {} but got {}",
+                "expected integer literal {} but got {}",
                 expected_value, expr
             ),
+        }
+    }
+
+    fn test_float_literal(expr: &Expression, expected_value: f64) {
+        match expr {
+            Expression::Float(num) => {
+                assert_eq!(
+                    expected_value, *num,
+                    "expected {} but got {}",
+                    expected_value, num
+                )
+            }
+            _ => panic!("expected float literal {} but got {}", expected_value, expr),
         }
     }
 

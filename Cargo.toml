@@ -8,3 +8,4 @@ edition = "2018"
 
 [dependencies]
 rustyline = "8.2.0"
+ryu = "1.0"

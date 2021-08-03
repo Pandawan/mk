@@ -76,6 +76,7 @@ pub enum Expression {
     // Literal
     Identifier(IdentifierLiteral),
     Integer(i64),
+    Float(f64),
     Boolean(bool),
     Nil,
 
@@ -92,6 +93,7 @@ impl Display for Expression {
         match self {
             Self::Identifier(name) => write!(f, "{}", name),
             Self::Integer(value) => write!(f, "{}", value),
+            Self::Float(value) => write!(f, "{}", value),
             Self::Boolean(value) => write!(f, "{}", value),
             Self::Nil => write!(f, "nil"),
 

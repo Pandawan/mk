@@ -38,7 +38,7 @@ impl<'a> Lexer<'a> {
 
     /// Read the current and following characters as a number token.
     fn read_number(&mut self, first: char) -> Token {
-        // TODO: Allow decimal numbers (f64)
+        let mut seen_dot = false;
 
         let mut s = String::new();
 
@@ -49,12 +49,24 @@ impl<'a> Lexer<'a> {
         while let Some(&ch) = self.peek_char() {
             if is_digit(ch) {
                 s.push(self.read_char().unwrap());
+            } else if ch == '.' {
+                if seen_dot == false {
+                    seen_dot = true;
+                    s.push(self.read_char().unwrap());
+                } else {
+                    break;
+                }
             } else {
                 break;
             }
         }
-        // TODO: Proper error message
-        return Token::Integer(s.parse().unwrap());
+
+        // TODO: Error handling (e.g. number too long, etc.)
+        if seen_dot {
+            Token::Float(s.parse().unwrap())
+        } else {
+            Token::Integer(s.parse().unwrap())
+        }
     }
 
     fn read_identifier_or_keyword(&mut self, first: char) -> Token {
@@ -199,10 +211,17 @@ mod tests {
     }
 
     #[test]
-    fn test_number() {
+    fn test_integer() {
         let input = "012312";
         let mut lex = Lexer::new(input);
         assert_eq!(lex.next_token(), Token::Integer(12312));
+    }
+
+    #[test]
+    fn test_float() {
+        let input = "012312.321";
+        let mut lex = Lexer::new(input);
+        assert_eq!(lex.next_token(), Token::Float(12312.321));
     }
 
     #[test]

@@ -31,6 +31,7 @@ impl Evaluator {
     fn eval_expression(&self, expr: Expression) -> Object {
         match expr {
             Expression::Integer(value) => Object::Integer(value),
+            Expression::Float(value) => Object::Float(value),
             Expression::Boolean(value) => Object::Boolean(value),
             Expression::Nil => Object::Nil,
             Expression::Prefix(prefix) => {
@@ -65,6 +66,7 @@ impl Evaluator {
     fn eval_minus_prefix_operator_expression(&self, right: Object) -> Object {
         match right {
             Object::Integer(value) => Object::Integer(-value),
+            Object::Float(value) => Object::Float(-value),
             // TODO: When adding float, add it here too
             _ => todo!("Error for non-integer values with - prefix operator"),
         }
@@ -75,9 +77,21 @@ impl Evaluator {
             (Object::Integer(left_value), Object::Integer(right_value)) => {
                 self.eval_integer_infix_expression(operator, left_value, right_value)
             }
+
+            (Object::Float(left_value), Object::Float(right_value)) => {
+                self.eval_float_infix_expression(operator, left_value, right_value)
+            }
+            (Object::Float(left_value), Object::Integer(right_value)) => {
+                self.eval_float_infix_expression(operator, left_value, right_value as f64)
+            }
+            (Object::Integer(left_value), Object::Float(right_value)) => {
+                self.eval_float_infix_expression(operator, left_value as f64, right_value)
+            }
+
             (Object::Boolean(left_value), Object::Boolean(right_value)) => {
                 self.eval_boolean_infix_expression(operator, left_value, right_value)
             }
+
             _ => todo!("Error for type mismatch"),
         }
     }
@@ -102,6 +116,27 @@ impl Evaluator {
             Token::BangEqual => Object::Boolean(left_value != right_value),
 
             _ => todo!("Error for operator doesn't exist for integers"),
+        }
+    }
+
+    fn eval_float_infix_expression(
+        &self,
+        operator: Token,
+        left_value: f64,
+        right_value: f64,
+    ) -> Object {
+        match operator {
+            Token::Plus => Object::Float(left_value + right_value),
+            Token::Minus => Object::Float(left_value - right_value),
+            Token::Star => Object::Float(left_value * right_value),
+            Token::Slash => Object::Float(left_value / right_value),
+
+            Token::LessThan => Object::Boolean(left_value < right_value),
+            Token::LessEqual => Object::Boolean(left_value <= right_value),
+            Token::GreaterThan => Object::Boolean(left_value > right_value),
+            Token::GreaterEqual => Object::Boolean(left_value >= right_value),
+
+            _ => todo!("Error for operator doesn't exist for float"),
         }
     }
 
@@ -150,6 +185,35 @@ mod tests {
     }
 
     #[test]
+    fn eval_float_expression() {
+        let tests = vec![
+            ("5.5", 5.5),
+            ("10.5", 10.5),
+            ("-5.5", -5.5),
+            ("-10.5", -10.5),
+            ("5.5 + 5.5 + 5.5 + 5.5 - 10.5", 11.5),
+            ("2.5 * 2.5 * 2.5 * 2.5 * 2.5", 97.65625),
+            ("-50.25 + 100.5 + -50.25", 0.0),
+            ("5.5 * 2.5 + 10.5", 24.25),
+            ("5.5 + 2.5 * 10.5", 31.75),
+            ("20.5 + 2.5 * -10.5", -5.75),
+            ("50.5 / 2.5 * 2.5 + 10.5", 61.0),
+            ("2.5 * (5.5 + 10.5)", 40.0),
+            ("3.5 * 3.5 * 3.5 + 10.5", 53.375),
+            ("3.5 * (3.5 * 3.5) + 10.5", 53.375),
+            (
+                "(5.5 + 10.5 * 2.5 + 15.5 / 3.5) * 2.5 + -10.5",
+                (5.5 + 10.5 * 2.5 + 15.5 / 3.5) * 2.5 + -10.5,
+            ),
+        ];
+
+        for (input, expected_value) in tests {
+            let evaluated = evaluate(input);
+            test_float_object(evaluated, expected_value);
+        }
+    }
+
+    #[test]
     fn eval_boolean_expression() {
         let tests = vec![
             ("true", true),
@@ -162,6 +226,10 @@ mod tests {
             ("1 != 1", false),
             ("1 == 2", false),
             ("1 != 2", true),
+            ("1.5 < 2.5", true),
+            ("1.5 > 2.5", false),
+            ("1.5 < 1.5", false),
+            ("1.5 > 1.5", false),
             ("true == true", true),
             ("false == false", true),
             ("true == false", false),
@@ -171,6 +239,10 @@ mod tests {
             ("(1 < 2) == false", false),
             ("(1 > 2) == true", false),
             ("(1 > 2) == false", true),
+            ("(1.5 < 2.5) == true", true),
+            ("(1.5 < 2.5) == false", false),
+            ("(1.5 > 2.5) == true", false),
+            ("(1.5 > 2.5) == false", true),
         ];
 
         for (input, expected_value) in tests {
@@ -228,6 +300,19 @@ mod tests {
         }
     }
 
+    fn test_float_object(obj: Object, expected_value: f64) {
+        match obj {
+            Object::Float(value) => {
+                if value != expected_value {
+                    panic!(
+                        "expected float object with value {} but got {:?}",
+                        expected_value, obj
+                    )
+                }
+            }
+            _ => panic!("expected float object but got {:?}", obj),
+        }
+    }
     fn test_boolean_object(obj: Object, expected_value: bool) {
         match obj {
             Object::Boolean(value) => {
