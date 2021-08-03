@@ -13,7 +13,7 @@ pub fn repl() {
     // `()` can be used when no completer is required
     let mut rl = Editor::<()>::new();
     loop {
-        let readline = rl.readline("> ");
+        let readline = rl.readline(">> ");
         match readline {
             Ok(line) => {
                 if line == "exit" || line == "quit" {
