@@ -1,6 +1,7 @@
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 
+use crate::evaluator::Evaluator;
 use crate::lexer::Lexer;
 use crate::parser::Parser;
 
@@ -27,7 +28,11 @@ pub fn repl() {
 
                 match prog {
                     Ok(prog) => {
-                        println!("{}", prog);
+                        let e = Evaluator::new();
+
+                        if let Some(obj) = e.eval(prog) {
+                            println!("{}", obj);
+                        }
                     }
                     Err(errors) => {
                         println!("Parser errors:");

@@ -207,7 +207,7 @@ mod tests {
 
     #[test]
     fn test_keywords() {
-        let input = "true false func let if else return";
+        let input = "true false fn let if else return";
         let mut lex = Lexer::new(input);
         assert_eq!(lex.next_token(), Token::True);
         assert_eq!(lex.next_token(), Token::False);
