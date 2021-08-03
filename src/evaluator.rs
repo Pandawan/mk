@@ -135,6 +135,8 @@ impl Evaluator {
             Token::LessEqual => Object::Boolean(left_value <= right_value),
             Token::GreaterThan => Object::Boolean(left_value > right_value),
             Token::GreaterEqual => Object::Boolean(left_value >= right_value),
+            Token::EqualEqual => Object::Boolean(left_value == right_value),
+            Token::BangEqual => Object::Boolean(left_value != right_value),
 
             _ => todo!("Error for operator doesn't exist for float"),
         }
@@ -205,6 +207,7 @@ mod tests {
                 "(5.5 + 10.5 * 2.5 + 15.5 / 3.5) * 2.5 + -10.5",
                 (5.5 + 10.5 * 2.5 + 15.5 / 3.5) * 2.5 + -10.5,
             ),
+            ("0.1 + 0.2", 0.1 + 0.2),
         ];
 
         for (input, expected_value) in tests {
@@ -230,6 +233,8 @@ mod tests {
             ("1.5 > 2.5", false),
             ("1.5 < 1.5", false),
             ("1.5 > 1.5", false),
+            ("1.5 == 2.5", false),
+            ("1.5 != 2.5", true),
             ("true == true", true),
             ("false == false", true),
             ("true == false", false),
@@ -243,6 +248,7 @@ mod tests {
             ("(1.5 < 2.5) == false", false),
             ("(1.5 > 2.5) == true", false),
             ("(1.5 > 2.5) == false", true),
+            ("0.1 + 0.2 == 0.3", false),
         ];
 
         for (input, expected_value) in tests {
