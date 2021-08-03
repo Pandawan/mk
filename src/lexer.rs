@@ -37,6 +37,7 @@ impl<'a> Lexer<'a> {
     }
 
     /// Read the current and following characters as a number token.
+    /// Source: https://michael-f-bryan.github.io/static-analyser-in-rust/book/lex.html
     fn read_number(&mut self, first: char) -> Token {
         let mut seen_dot = false;
 
@@ -69,6 +70,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// Read the current and following tokens as an identifier or a keyword (if it exists).
     fn read_identifier_or_keyword(&mut self, first: char) -> Token {
         let mut identifier = String::new();
         identifier.push(first);
@@ -98,7 +100,14 @@ impl<'a> Lexer<'a> {
             match c {
                 '+' => Token::Plus,
                 '-' => Token::Minus,
-                '*' => Token::Star,
+                '*' => match self.peek_char() {
+                    // Double star
+                    Some('*') => {
+                        self.read_char();
+                        Token::StarStar
+                    }
+                    _ => Token::Star,
+                },
                 '/' => Token::Slash,
 
                 '=' => match self.peek_char() {
@@ -167,7 +176,7 @@ mod tests {
 
     #[test]
     fn test_operators() {
-        let input = "+-*/=! ==!=<><=>=";
+        let input = "+-*/=! **==!=<><=>=";
         let mut lex = Lexer::new(input);
 
         assert_eq!(lex.next_token(), Token::Plus);
@@ -176,6 +185,7 @@ mod tests {
         assert_eq!(lex.next_token(), Token::Slash);
         assert_eq!(lex.next_token(), Token::Equal);
         assert_eq!(lex.next_token(), Token::Bang);
+        assert_eq!(lex.next_token(), Token::StarStar);
 
         assert_eq!(lex.next_token(), Token::EqualEqual);
         assert_eq!(lex.next_token(), Token::BangEqual);

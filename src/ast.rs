@@ -165,9 +165,9 @@ impl Display for InfixExpression {
 #[derive(Debug, PartialEq)]
 pub struct IfExpression {
     pub condition: Expression,
-    // Block if condition is true
+    /// Block if condition is true
     pub consequence: BlockStatement,
-    // Block if condition is false
+    /// Block if condition is false
     pub alternative: Option<BlockStatement>,
 }
 
@@ -185,7 +185,7 @@ impl Display for IfExpression {
 
 #[derive(Debug, PartialEq)]
 pub struct FunctionLiteral {
-    // Parameter identifiers
+    /// Parameter identifiers
     pub parameters: Vec<IdentifierLiteral>,
     pub body: BlockStatement,
 }

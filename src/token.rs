@@ -10,6 +10,7 @@ pub enum Token {
     Slash,
     Equal,
     Bang,
+    StarStar,
 
     EqualEqual,
     BangEqual,
@@ -71,6 +72,7 @@ impl fmt::Display for Token {
             Token::Slash => write!(f, "/"),
             Token::Equal => write!(f, "="),
             Token::Bang => write!(f, "!"),
+            Token::StarStar => write!(f, "**"),
 
             Token::EqualEqual => write!(f, "=="),
             Token::BangEqual => write!(f, "!="),

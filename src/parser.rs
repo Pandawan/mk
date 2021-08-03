@@ -38,13 +38,14 @@ type ParseResult<T> = Result<T, ParseError>;
 type PrefixFn = fn(parser: &mut Parser<'_>) -> ParseResult<Expression>;
 type InfixFn = fn(parser: &mut Parser<'_>, left: Expression) -> ParseResult<Expression>;
 
-#[derive(PartialEq, PartialOrd)]
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
 enum Precedence {
     Lowest,
     Equals,
     LessGreater,
     Sum,
     Product,
+    // Exponent
     Prefix,
     Call,
 }
@@ -61,6 +62,7 @@ impl Precedence {
             Token::Slash => Precedence::Product,
             Token::Star => Precedence::Product,
             Token::LeftParen => Precedence::Call,
+            // Token::StarStar => Precedence::Exponent
             // Token::LeftBrace => Precedence::Index,
             _ => Precedence::Lowest,
         }
@@ -85,6 +87,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parse the entire input as a program.
     pub fn parse_program(&mut self) -> Result<Program, Vec<ParseError>> {
         let mut program = Program::new();
         let mut errors: Vec<ParseError> = Vec::new();
@@ -185,6 +188,7 @@ impl<'a> Parser<'a> {
         Ok(left_expr)
     }
 
+    /// Get the matching prefix parsing function for the given token.
     fn get_prefix_fn(&self, token: &Token) -> Option<PrefixFn> {
         match token {
             Token::If => Some(Parser::parse_if_expression),
@@ -203,6 +207,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Get the matching infix parsing function for the given token.
     fn get_infix_fn(&self, token: &Token) -> Option<InfixFn> {
         match token {
             Token::LeftParen => Some(Parser::parse_call_expression),
@@ -214,6 +219,7 @@ impl<'a> Parser<'a> {
             | Token::EqualEqual
             | Token::BangEqual
             | Token::LessThan
+            // TODO: Implement Exponent (Token::StarStar)
             | Token::GreaterThan => Some(Parser::parse_infix_expression),
             _ => None,
         }
@@ -714,14 +720,15 @@ mod tests {
     fn infix_integer_expression() {
         // Tests: (input, left_value, operator, right_value)
         let tests: Vec<(&str, i64, Token, i64)> = vec![
-            ("5 + 5;", 5, Token::Plus, 5),
-            ("5 - 5;", 5, Token::Minus, 5),
-            ("5 * 5;", 5, Token::Star, 5),
-            ("5 / 5;", 5, Token::Slash, 5),
-            ("5 > 5;", 5, Token::GreaterThan, 5),
-            ("5 < 5;", 5, Token::LessThan, 5),
-            ("5 == 5;", 5, Token::EqualEqual, 5),
-            ("5 != 5;", 5, Token::BangEqual, 5),
+            ("2 + 5;", 2, Token::Plus, 5),
+            ("2 - 5;", 2, Token::Minus, 5),
+            ("2 * 5;", 2, Token::Star, 5),
+            ("2 / 5;", 2, Token::Slash, 5),
+            // ("2 ** 5;", 2, Token::StarStar, 5),
+            ("2 > 5;", 2, Token::GreaterThan, 5),
+            ("2 < 5;", 2, Token::LessThan, 5),
+            ("2 == 5;", 2, Token::EqualEqual, 5),
+            ("2 != 5;", 2, Token::BangEqual, 5),
         ];
 
         for (input, left, op, right) in tests {
@@ -748,14 +755,15 @@ mod tests {
     fn infix_float_expression() {
         // Tests: (input, left_value, operator, right_value)
         let tests: Vec<(&str, f64, Token, f64)> = vec![
-            ("5.5 + 5.5;", 5.5, Token::Plus, 5.5),
-            ("5.5 - 5.5;", 5.5, Token::Minus, 5.5),
-            ("5.5 * 5.5;", 5.5, Token::Star, 5.5),
-            ("5.5 / 5.5;", 5.5, Token::Slash, 5.5),
-            ("5.5 > 5.5;", 5.5, Token::GreaterThan, 5.5),
-            ("5.5 < 5.5;", 5.5, Token::LessThan, 5.5),
-            ("5.5 == 5.5;", 5.5, Token::EqualEqual, 5.5),
-            ("5.5 != 5.5;", 5.5, Token::BangEqual, 5.5),
+            ("2.5 + 5.5;", 2.5, Token::Plus, 5.5),
+            ("2.5 - 5.5;", 2.5, Token::Minus, 5.5),
+            ("2.5 * 5.5;", 2.5, Token::Star, 5.5),
+            ("2.5 / 5.5;", 2.5, Token::Slash, 5.5),
+            // ("2.5 ** 5.5;", 2.5, Token::StarStar, 5.5),
+            ("2.5 > 5.5;", 2.5, Token::GreaterThan, 5.5),
+            ("2.5 < 5.5;", 2.5, Token::LessThan, 5.5),
+            ("2.5 == 5.5;", 2.5, Token::EqualEqual, 5.5),
+            ("2.5 != 5.5;", 2.5, Token::BangEqual, 5.5),
         ];
 
         for (input, left, op, right) in tests {
@@ -819,6 +827,9 @@ mod tests {
             ("a * b * c", "((a * b) * c)"),
             ("a * b / c", "((a * b) / c)"),
             ("a + b / c", "(a + (b / c))"),
+            // ("a + b / c ** d", "(a + (b / (c ** d)))"),
+            // ("-b ** c", "((-b) ** c)"),
+            // ("a ** b ** c", "(a ** (b ** c))"),
             ("a + b * c + d / e - f", "(((a + (b * c)) + (d / e)) - f)"),
             ("3 + 4; -5 * 5", "(3 + 4)((-5) * 5)"),
             ("5 > 4 == 3 < 4", "((5 > 4) == (3 < 4))"),
