@@ -15,9 +15,14 @@ impl Program {
 
 impl Display for Program {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for statement in &self.statements {
-            write!(f, "{}", statement)?;
-        }
+        let s = (&self.statements)
+            .into_iter()
+            .map(|stmt| stmt.to_string())
+            .collect::<Vec<String>>()
+            .join("; ");
+
+        write!(f, "{}", s)?;
+
         Ok(())
     }
 }
@@ -56,21 +61,6 @@ impl Display for Statement {
     }
 }
 
-// TODO: Block Statements are special, should they still be part of the Statement enum?
-#[derive(Debug, PartialEq)]
-pub struct BlockStatement {
-    pub statements: Vec<Statement>,
-}
-
-impl Display for BlockStatement {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for stmt in &self.statements {
-            write!(f, "{}", stmt)?;
-        }
-        Ok(())
-    }
-}
-
 #[derive(Debug, PartialEq)]
 pub enum Expression {
     // Literal
@@ -83,6 +73,7 @@ pub enum Expression {
     // Complex
     Prefix(Box<PrefixExpression>),
     Infix(Box<InfixExpression>),
+    Block(Box<BlockExpression>),
     If(Box<IfExpression>),
     Function(Box<FunctionLiteral>),
     Call(Box<CallExpression>),
@@ -99,6 +90,7 @@ impl Display for Expression {
 
             Self::Prefix(prefix) => write!(f, "{}", prefix),
             Self::Infix(infix) => write!(f, "{}", infix),
+            Self::Block(block) => write!(f, "{}", block),
             Self::If(if_exp) => write!(f, "{}", if_exp),
             Self::Function(func) => write!(f, "{}", func),
             Self::Call(call) => write!(f, "{}", call),
@@ -163,21 +155,37 @@ impl Display for InfixExpression {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct BlockExpression {
+    pub statements: Vec<Statement>,
+}
+
+impl Display for BlockExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for stmt in &self.statements {
+            write!(f, "{}", stmt)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, PartialEq)]
 pub struct IfExpression {
     pub condition: Expression,
     /// Block if condition is true
-    pub consequence: BlockStatement,
-    /// Block if condition is false
-    pub alternative: Option<BlockStatement>,
+    pub consequence: BlockExpression,
+    /// Expression (BlockExpression or IfExpression) if condition is false
+    pub alternative: Option<Expression>,
 }
 
 impl Display for IfExpression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "if {} {}", self.condition, self.consequence)?;
+        write!(f, "(if {} {}", self.condition, self.consequence)?;
 
-        if let Some(ref stmt) = self.alternative {
-            write!(f, "else {}", stmt)?;
+        if let Some(ref alt) = self.alternative {
+            write!(f, " else {}", alt)?;
         }
+
+        write!(f, ")")?;
 
         Ok(())
     }
@@ -187,14 +195,14 @@ impl Display for IfExpression {
 pub struct FunctionLiteral {
     /// Parameter identifiers
     pub parameters: Vec<IdentifierLiteral>,
-    pub body: BlockStatement,
+    pub body: BlockExpression,
 }
 
 impl Display for FunctionLiteral {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "fn({}) {}",
+            "(fn({}) {})",
             self.parameters
                 .iter()
                 .map(|ident| ident.to_string())

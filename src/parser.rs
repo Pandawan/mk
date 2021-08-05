@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use crate::ast::{
-    BlockStatement, CallExpression, Expression, FunctionLiteral, IdentifierLiteral, IfExpression,
+    BlockExpression, CallExpression, Expression, FunctionLiteral, IdentifierLiteral, IfExpression,
     InfixExpression, PrefixExpression, Program, Statement,
 };
 use crate::{lexer::Lexer, token::Token};
@@ -201,6 +201,7 @@ impl<'a> Parser<'a> {
             Token::Nil => Some(Parser::parse_nil_expression),
 
             Token::LeftParen => Some(Parser::parse_grouped_expression),
+            Token::LeftBrace => Some(Parser::parse_block_expression),
 
             Token::Bang | Token::Minus => Some(Parser::parse_prefix_expression),
             _ => None,
@@ -226,7 +227,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_if_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
-        // Consume the `if` token
+        // Advance past the `if` token (was already current_token, consume it out)
         parser.next_token();
 
         // Parse the condition (note: parentheses are not required)
@@ -235,18 +236,26 @@ impl<'a> Parser<'a> {
         // Expect opening brace of consequence block
         parser.expect_peek(Token::LeftBrace)?;
 
-        let consequence = parser.parse_block_statement()?;
+        let consequence = parser.parse_block_expression_as_block()?;
 
         let alternative = if parser.peek_token_is(&Token::Else) {
-            // Consume the `else` token
+            // Consume the `else` token (was peek_token, advance into current_token)
             parser.next_token();
 
-            // TODO: Allow `else if` (potentially by branching separately based on Token::LeftBrace vs Token::If)
+            // Allow `else if` by branching separately based on Token::LeftBrace vs Token::If
+            if parser.peek_token_is(&Token::If) {
+                // Consume `if` token (was peek_token, advance into current_token)
+                parser.next_token();
+                let else_if_expr = Parser::parse_if_expression(parser)?;
 
-            // Expect opening brace of alternative block
-            parser.expect_peek(Token::LeftBrace)?;
+                Some(else_if_expr)
+            } else {
+                // Expect opening brace of alternative block
+                parser.expect_peek(Token::LeftBrace)?;
 
-            Some(parser.parse_block_statement()?)
+                let else_block = Parser::parse_block_expression(parser)?;
+                Some(else_block)
+            }
         } else {
             None
         };
@@ -258,7 +267,8 @@ impl<'a> Parser<'a> {
         })))
     }
 
-    fn parse_block_statement(&mut self) -> ParseResult<BlockStatement> {
+    /// Parse a block expresssion as a BlockExpression rather than a generic Expression
+    fn parse_block_expression_as_block(&mut self) -> ParseResult<BlockExpression> {
         let mut statements = Vec::new();
 
         // Consume the left brace
@@ -271,7 +281,13 @@ impl<'a> Parser<'a> {
             self.next_token();
         }
 
-        return Ok(BlockStatement { statements });
+        Ok(BlockExpression { statements })
+    }
+
+    /// Parse a block expression directly as a generic Expression
+    fn parse_block_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
+        let block = parser.parse_block_expression_as_block()?;
+        Ok(Expression::Block(Box::new(block)))
     }
 
     fn parse_function_literal(parser: &mut Parser<'_>) -> ParseResult<Expression> {
@@ -281,7 +297,7 @@ impl<'a> Parser<'a> {
 
         parser.expect_peek(Token::LeftBrace)?;
 
-        let body = parser.parse_block_statement()?;
+        let body = parser.parse_block_expression_as_block()?;
 
         return Ok(Expression::Function(Box::new(FunctionLiteral {
             parameters,
@@ -831,7 +847,7 @@ mod tests {
             // ("-b ** c", "((-b) ** c)"),
             // ("a ** b ** c", "(a ** (b ** c))"),
             ("a + b * c + d / e - f", "(((a + (b * c)) + (d / e)) - f)"),
-            ("3 + 4; -5 * 5", "(3 + 4)((-5) * 5)"),
+            ("3 + 4; -5 * 5", "(3 + 4); ((-5) * 5)"),
             ("5 > 4 == 3 < 4", "((5 > 4) == (3 < 4))"),
             ("5 < 4 != 3 > 4", "((5 < 4) != (3 > 4))"),
             ("3 + 4 * 5 == 3 * 1 + 4 * 5", "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))"),
@@ -898,18 +914,73 @@ mod tests {
 
                 match if_expr.consequence.statements.first().unwrap() {
                     Statement::Expression { expression } => test_identifier(expression, "x"),
-                    stmt => panic!("expected expression statement but got {:?}", stmt),
+                    stmt => panic!("expected expression statement (in if) but got {:?}", stmt),
                 }
 
-                if let Some(alternative) = &if_expr.alternative {
+                if let Some(Expression::Block(alternative)) = &if_expr.alternative {
                     assert_eq!(alternative.statements.len(), 1);
 
                     match alternative.statements.first().unwrap() {
                         Statement::Expression { expression } => test_identifier(expression, "y"),
-                        stmt => panic!("expected expression statement but got {:?}", stmt),
+                        stmt => {
+                            panic!("expected expression statement (in else) but got {:?}", stmt)
+                        }
                     }
                 } else {
                     panic!("expected alternative (else) block")
+                }
+            }
+            expr => panic!("expected if expression but got {}", expr),
+        }
+    }
+
+    #[test]
+    fn if_elseif_else_expression() {
+        let input = "if x < y { x } else if x > y { y } else { z }";
+
+        let prog = setup(input, 1);
+        let expr = unwrap_expression(&prog);
+
+        match expr {
+            Expression::If(if_expr) => {
+                test_if_condition(&if_expr.condition, "x", Token::LessThan, "y");
+
+                assert_eq!(if_expr.consequence.statements.len(), 1);
+
+                match if_expr.consequence.statements.first().unwrap() {
+                    Statement::Expression { expression } => test_identifier(expression, "x"),
+                    stmt => panic!("expected expression statement (in if) but got {:?}", stmt),
+                }
+
+                if let Some(Expression::If(elseif)) = &if_expr.alternative {
+                    test_if_condition(&elseif.condition, "x", Token::GreaterThan, "y");
+
+                    assert_eq!(elseif.consequence.statements.len(), 1);
+
+                    match elseif.consequence.statements.first().unwrap() {
+                        Statement::Expression { expression } => test_identifier(expression, "y"),
+                        stmt => panic!(
+                            "expected expression statement (in else if) but got {:?}",
+                            stmt
+                        ),
+                    }
+
+                    if let Some(Expression::Block(alternative)) = &elseif.alternative {
+                        assert_eq!(alternative.statements.len(), 1);
+
+                        match alternative.statements.first().unwrap() {
+                            Statement::Expression { expression } => {
+                                test_identifier(expression, "z")
+                            }
+                            stmt => {
+                                panic!("expected expression statement (in else) but got {:?}", stmt)
+                            }
+                        }
+                    } else {
+                        panic!("expected alternative (else) block")
+                    }
+                } else {
+                    panic!("expected alternative (else if) expression")
                 }
             }
             expr => panic!("expected if expression but got {}", expr),

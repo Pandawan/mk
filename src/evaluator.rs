@@ -1,5 +1,5 @@
 use crate::{
-    ast::{BlockStatement, Expression, Program, Statement},
+    ast::{BlockExpression, Expression, Program, Statement},
     object::Object,
     token::Token,
 };
@@ -49,11 +49,15 @@ impl Evaluator {
                 self.eval_infix_expression(infix.operator, left, right)
             }
 
+            Expression::Block(block) => self
+                .eval_statements(block.statements)
+                .unwrap_or(Object::Nil),
+
             Expression::If(if_expr) => {
                 self.eval_if_expression(if_expr.condition, if_expr.consequence, if_expr.alternative)
             }
 
-            _ => todo!("Implement other expressions"),
+            _ => todo!("Implement other expressions {}", expr),
         }
     }
 
@@ -169,8 +173,8 @@ impl Evaluator {
     fn eval_if_expression(
         &self,
         condition: Expression,
-        consequence: BlockStatement,
-        alternative: Option<BlockStatement>,
+        consequence: BlockExpression,
+        alternative: Option<Expression>,
     ) -> Object {
         let evaluated_condition = self.eval_expression(condition);
 
@@ -180,9 +184,8 @@ impl Evaluator {
                     // TODO: Clean this up, having to unwrap_or may not be the best approach?
                     self.eval_statements(consequence.statements)
                         .unwrap_or(Object::Nil)
-                } else if let Some(alternative_stmt) = alternative {
-                    self.eval_statements(alternative_stmt.statements)
-                        .unwrap_or(Object::Nil)
+                } else if let Some(alternative) = alternative {
+                    self.eval_expression(alternative)
                 } else {
                     Object::Nil
                 }
