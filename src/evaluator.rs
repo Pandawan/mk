@@ -1,5 +1,5 @@
 use crate::{
-    ast::{Expression, Program, Statement},
+    ast::{BlockStatement, Expression, Program, Statement},
     object::Object,
     token::Token,
 };
@@ -12,9 +12,14 @@ impl Evaluator {
     }
 
     pub fn eval(&self, prog: Program) -> Option<Object> {
+        self.eval_statements(prog.statements)
+    }
+
+    fn eval_statements(&self, statements: Vec<Statement>) -> Option<Object> {
         let mut result = None;
 
-        for stmt in prog.statements {
+        for stmt in statements {
+            // TODO: On first error, stop and return? See rs-monkey-lang
             result = Some(self.eval_statement(stmt));
         }
 
@@ -43,6 +48,11 @@ impl Evaluator {
                 let right = self.eval_expression(infix.right);
                 self.eval_infix_expression(infix.operator, left, right)
             }
+
+            Expression::If(if_expr) => {
+                self.eval_if_expression(if_expr.condition, if_expr.consequence, if_expr.alternative)
+            }
+
             _ => todo!("Implement other expressions"),
         }
     }
@@ -149,9 +159,35 @@ impl Evaluator {
         right_value: bool,
     ) -> Object {
         match operator {
+            // NOTE: No truthy/implicit conversion
             Token::EqualEqual => Object::Boolean(left_value == right_value),
             Token::BangEqual => Object::Boolean(left_value != right_value),
             _ => todo!("Error for operator doesn't exist for boolean"),
+        }
+    }
+
+    fn eval_if_expression(
+        &self,
+        condition: Expression,
+        consequence: BlockStatement,
+        alternative: Option<BlockStatement>,
+    ) -> Object {
+        let evaluated_condition = self.eval_expression(condition);
+
+        match evaluated_condition {
+            Object::Boolean(value) => {
+                if value {
+                    // TODO: Clean this up, having to unwrap_or may not be the best approach?
+                    self.eval_statements(consequence.statements)
+                        .unwrap_or(Object::Nil)
+                } else if let Some(alternative_stmt) = alternative {
+                    self.eval_statements(alternative_stmt.statements)
+                        .unwrap_or(Object::Nil)
+                } else {
+                    Object::Nil
+                }
+            }
+            _ => todo!("Error b/c not a boolean condition"),
         }
     }
 }
@@ -272,6 +308,27 @@ mod tests {
         }
     }
 
+    #[test]
+    fn eval_if_else_expression() {
+        let tests = vec![
+            ("if (true) { 10 }", Object::Integer(10)),
+            ("if (false) { 10 }", Object::Nil),
+            ("if (1 < 2) { 10 }", Object::Integer(10)),
+            ("if (1 > 2) { 10 }", Object::Nil),
+            ("if (1 > 2) { 10 } else { 20 }", Object::Integer(20)),
+            ("if (1 < 2) { 10 } else { 20 }", Object::Integer(10)),
+        ];
+
+        for (input, expected_value) in tests {
+            let evaluated = evaluate(input);
+
+            match expected_value {
+                Object::Integer(i) => test_integer_object(evaluated, i),
+                _ => test_null_object(evaluated),
+            }
+        }
+    }
+
     fn evaluate(input: &str) -> Object {
         let l = Lexer::new(input);
         let mut p = Parser::new(l);
@@ -330,6 +387,12 @@ mod tests {
                 }
             }
             _ => panic!("expected boolean object but got {:?}", obj),
+        }
+    }
+
+    fn test_null_object(obj: Object) {
+        if obj != Object::Nil {
+            panic!("expected null object but got {:?}", obj)
         }
     }
 }
