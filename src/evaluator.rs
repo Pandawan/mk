@@ -19,6 +19,7 @@ impl Evaluator {
                 // If a return value is found, immediately return and stop evaluating statements
                 // Unwrap the return value into a final value so the program can use it
                 Object::ReturnValue(obj) => return Some(*obj),
+                Object::Error(message) => return Some(Object::Error(message)),
                 obj => result = Some(obj),
             }
         }
@@ -35,6 +36,7 @@ impl Evaluator {
                 // If a return value is found, immediately return and stop evaluating statements
                 // Don't unwrap the return value, we might be in a nested block which also needs to return
                 Object::ReturnValue(obj) => return Some(Object::ReturnValue(obj)),
+                Object::Error(message) => return Some(Object::Error(message)),
                 obj => result = Some(obj),
             }
         }
@@ -47,6 +49,12 @@ impl Evaluator {
             Statement::Expression { expression } => self.eval_expression(expression),
             Statement::Return { value } => {
                 let obj = self.eval_expression(value);
+
+                // No need to encapsulate an Error with a ReturnValue since they both bubble up the same way
+                if obj.is_error() {
+                    return obj;
+                }
+
                 return Object::ReturnValue(Box::new(obj));
             }
             _ => todo!("Implement other statements"),
@@ -61,11 +69,23 @@ impl Evaluator {
             Expression::Nil => Object::Nil,
             Expression::Prefix(prefix) => {
                 let right = self.eval_expression(prefix.right);
+                // Early return the first error received
+                if right.is_error() {
+                    return right;
+                }
                 self.eval_prefix_expression(prefix.operator, right)
             }
             Expression::Infix(infix) => {
                 let left = self.eval_expression(infix.left);
+                // Early return the first error received
+                if left.is_error() {
+                    return left;
+                }
                 let right = self.eval_expression(infix.right);
+                // Early return the first error received
+                if right.is_error() {
+                    return right;
+                }
                 self.eval_infix_expression(infix.operator, left, right)
             }
 
@@ -86,7 +106,7 @@ impl Evaluator {
         match operator {
             Token::Bang => self.eval_bang_operator_expression(right),
             Token::Minus => self.eval_minus_prefix_operator_expression(right),
-            _ => todo!("Implement other prefix operators"),
+            _ => Object::Error(format!("unknown prefix operator {}{:?}", operator, right)),
         }
     }
 
@@ -94,7 +114,10 @@ impl Evaluator {
         match right {
             Object::Boolean(true) => Object::Boolean(false),
             Object::Boolean(false) => Object::Boolean(true),
-            _ => todo!("Error for non-bool/nil expression with ! prefix operator"),
+            _ => Object::Error(format!(
+                "invalid operand type `{}` for ! operator",
+                right.typename()
+            )),
         }
     }
 
@@ -102,8 +125,10 @@ impl Evaluator {
         match right {
             Object::Integer(value) => Object::Integer(-value),
             Object::Float(value) => Object::Float(-value),
-            // TODO: When adding float, add it here too
-            _ => todo!("Error for non-integer values with - prefix operator"),
+            _ => Object::Error(format!(
+                "invalid operand type `{}` for - operator",
+                right.typename()
+            )),
         }
     }
 
@@ -127,7 +152,10 @@ impl Evaluator {
                 self.eval_boolean_infix_expression(operator, left_value, right_value)
             }
 
-            _ => todo!("Error for type mismatch"),
+            (left, right) => Object::Error(format!(
+                "type mismatch for {}: {:?} and {:?}",
+                operator, left, right
+            )),
         }
     }
 
@@ -150,7 +178,12 @@ impl Evaluator {
             Token::EqualEqual => Object::Boolean(left_value == right_value),
             Token::BangEqual => Object::Boolean(left_value != right_value),
 
-            _ => todo!("Error for operator doesn't exist for integers"),
+            operator => Object::Error(format!(
+                "unknown infix operator: {:?} {} {:?}",
+                Object::Integer(left_value),
+                operator,
+                Object::Integer(right_value)
+            )),
         }
     }
 
@@ -173,7 +206,13 @@ impl Evaluator {
             Token::EqualEqual => Object::Boolean(left_value == right_value),
             Token::BangEqual => Object::Boolean(left_value != right_value),
 
-            _ => todo!("Error for operator doesn't exist for float"),
+            // TODO: Better error messages like rust "cannot add `bool` and `bool`"
+            operator => Object::Error(format!(
+                "unknown infix operator: {:?} {} {:?}",
+                Object::Float(left_value),
+                operator,
+                Object::Float(right_value)
+            )),
         }
     }
 
@@ -187,7 +226,13 @@ impl Evaluator {
             // NOTE: No truthy/implicit conversion
             Token::EqualEqual => Object::Boolean(left_value == right_value),
             Token::BangEqual => Object::Boolean(left_value != right_value),
-            _ => todo!("Error for operator doesn't exist for boolean"),
+
+            operator => Object::Error(format!(
+                "unknown infix operator: {:?} {} {:?}",
+                Object::Boolean(left_value),
+                operator,
+                Object::Boolean(right_value)
+            )),
         }
     }
 
@@ -198,6 +243,10 @@ impl Evaluator {
         alternative: Option<Expression>,
     ) -> Object {
         let evaluated_condition = self.eval_expression(condition);
+        // Early return the first error received
+        if evaluated_condition.is_error() {
+            return evaluated_condition;
+        }
 
         match evaluated_condition {
             Object::Boolean(value) => {
@@ -212,7 +261,7 @@ impl Evaluator {
                     Object::Nil
                 }
             }
-            _ => todo!("Error b/c not a boolean condition"),
+            obj => Object::Error(format!("expected `boolean` condition but got {:?}", obj)),
         }
     }
 }
@@ -381,6 +430,53 @@ mod tests {
         }
     }
 
+    #[test]
+    fn error_handling() {
+        let tests = vec![
+            (
+                "5 + true;",
+                "type mismatch for +: Integer(5) and Boolean(true)",
+            ),
+            (
+                "5 + true; 5;",
+                "type mismatch for +: Integer(5) and Boolean(true)",
+            ),
+            ("-true", "invalid operand type `boolean` for - operator"),
+            (
+                "true + false;",
+                "unknown infix operator: Boolean(true) + Boolean(false)",
+            ),
+            (
+                "5; true + false; 5",
+                "unknown infix operator: Boolean(true) + Boolean(false)",
+            ),
+            (
+                "if 10 > 1 { true + false; }",
+                "unknown infix operator: Boolean(true) + Boolean(false)",
+            ),
+            (
+                "if 1 { true + false; }",
+                "expected `boolean` condition but got Integer(1)",
+            ),
+            (
+                "
+                if (10 > 1) {
+                  if (10 > 1) {
+                    return true + false;
+                  }
+                  return 1;
+                }
+                ",
+                "unknown infix operator: Boolean(true) + Boolean(false)",
+            ),
+        ];
+
+        for (input, expected_error) in tests {
+            let evaluated = evaluate(input);
+            test_error_object(evaluated, expected_error)
+        }
+    }
+
     fn evaluate(input: &str) -> Object {
         let l = Lexer::new(input);
         let mut p = Parser::new(l);
@@ -445,6 +541,20 @@ mod tests {
     fn test_null_object(obj: Object) {
         if obj != Object::Nil {
             panic!("expected null object but got {:?}", obj)
+        }
+    }
+
+    fn test_error_object(obj: Object, expected_message: &str) {
+        match obj {
+            Object::Error(message) => {
+                if message != expected_message {
+                    panic!(
+                        "expected error message to be \"{}\" but got \"{}\"",
+                        expected_message, message
+                    )
+                }
+            }
+            _ => panic!("expected error object but got {:?}", obj),
         }
     }
 }
