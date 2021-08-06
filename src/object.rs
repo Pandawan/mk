@@ -6,6 +6,9 @@ pub enum Object {
     Float(f64),
     Boolean(bool),
     Nil,
+    /// Special object to encapsulate a return-ed value while it goes up scopes.
+    /// This is never seen by the user.
+    ReturnValue(Box<Object>),
 }
 
 impl Object {
@@ -15,6 +18,7 @@ impl Object {
             Self::Float(_) => "float".into(),
             Self::Boolean(_) => "boolean".into(),
             Self::Nil => "nil".into(),
+            Self::ReturnValue(obj) => obj.typename(),
         }
     }
 }
@@ -26,6 +30,7 @@ impl Display for Object {
             Self::Float(value) => write!(f, "{}", ryu::Buffer::new().format(*value)),
             Self::Boolean(value) => write!(f, "{}", value),
             Self::Nil => write!(f, "nil"),
+            Self::ReturnValue(obj) => write!(f, "{}", obj),
         }
     }
 }

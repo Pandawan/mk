@@ -12,15 +12,31 @@ impl Evaluator {
     }
 
     pub fn eval(&self, prog: Program) -> Option<Object> {
-        self.eval_statements(prog.statements)
-    }
-
-    fn eval_statements(&self, statements: Vec<Statement>) -> Option<Object> {
         let mut result = None;
 
-        for stmt in statements {
-            // TODO: On first error, stop and return? See rs-monkey-lang
-            result = Some(self.eval_statement(stmt));
+        for stmt in prog.statements {
+            match self.eval_statement(stmt) {
+                // If a return value is found, immediately return and stop evaluating statements
+                // Unwrap the return value into a final value so the program can use it
+                Object::ReturnValue(obj) => return Some(*obj),
+                obj => result = Some(obj),
+            }
+        }
+
+        return result;
+    }
+
+    // Similar to eval (for programs) but doesn't unwrap return values
+    fn eval_block_expression(&self, block: BlockExpression) -> Option<Object> {
+        let mut result = None;
+
+        for stmt in block.statements {
+            match self.eval_statement(stmt) {
+                // If a return value is found, immediately return and stop evaluating statements
+                // Don't unwrap the return value, we might be in a nested block which also needs to return
+                Object::ReturnValue(obj) => return Some(Object::ReturnValue(obj)),
+                obj => result = Some(obj),
+            }
         }
 
         return result;
@@ -29,6 +45,10 @@ impl Evaluator {
     fn eval_statement(&self, stmt: Statement) -> Object {
         match stmt {
             Statement::Expression { expression } => self.eval_expression(expression),
+            Statement::Return { value } => {
+                let obj = self.eval_expression(value);
+                return Object::ReturnValue(Box::new(obj));
+            }
             _ => todo!("Implement other statements"),
         }
     }
@@ -50,7 +70,8 @@ impl Evaluator {
             }
 
             Expression::Block(block) => self
-                .eval_statements(block.statements)
+                .eval_block_expression(*block)
+                // Blocks return nil unless a value is given
                 .unwrap_or(Object::Nil),
 
             Expression::If(if_expr) => {
@@ -181,8 +202,9 @@ impl Evaluator {
         match evaluated_condition {
             Object::Boolean(value) => {
                 if value {
-                    // TODO: Clean this up, having to unwrap_or may not be the best approach?
-                    self.eval_statements(consequence.statements)
+                    // TODO: I don't like repeating this part in both eval_expression and eval_if_expression, maybe consolidate it
+                    self.eval_block_expression(consequence)
+                        // Blocks return nil unless a value is given
                         .unwrap_or(Object::Nil)
                 } else if let Some(alternative) = alternative {
                     self.eval_expression(alternative)
@@ -329,6 +351,33 @@ mod tests {
                 Object::Integer(i) => test_integer_object(evaluated, i),
                 _ => test_null_object(evaluated),
             }
+        }
+    }
+
+    #[test]
+    fn eval_return_statements() {
+        let tests = vec![
+            ("return 10;", 10),
+            ("return 10; 9;", 10),
+            ("return 2 * 5; 9;", 10),
+            ("9; return 2 * 5; 9;", 10),
+            (
+                "
+                if (10 > 1) {
+                  if (10 > 1) {
+                    return 10;
+                  }
+                
+                  return 1;
+                }
+                ",
+                10,
+            ),
+        ];
+
+        for (input, expected_value) in tests {
+            let evaluated = evaluate(input);
+            test_integer_object(evaluated, expected_value)
         }
     }
 
