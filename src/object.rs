@@ -1,5 +1,7 @@
 use std::fmt::Display;
 
+use crate::token::Token;
+
 #[derive(Debug, PartialEq)]
 pub enum Object {
     Integer(i64),
@@ -10,8 +12,7 @@ pub enum Object {
     /// This is never seen by the user.
     ReturnValue(Box<Object>),
     // TODO: Add Spans to the entire codebase so errors can report a trace
-    // TODO: Use a preset-error enum to standardize error messages all in one place
-    Error(String),
+    Error(Box<RuntimeError>),
 }
 
 impl Object {
@@ -43,6 +44,46 @@ impl Display for Object {
             Self::Nil => write!(f, "nil"),
             Self::ReturnValue(obj) => write!(f, "{}", obj),
             Self::Error(message) => write!(f, "Error: {}", message),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum RuntimeError {
+    /// When attempting a prefix operation on an invalid type (e.g. !int)
+    InvalidPrefixOperandType(Token, Object),
+    /// When attempting an infix operation on invalid types/types that are not compatible (e.g. bool + bool, int + bool)
+    InvalidInfixOperandType(Token, Object, Object),
+    /// When expecting a boolean conditional expression (e.g. if 1)
+    ExpectedBooleanCondition(Object),
+}
+
+impl Display for RuntimeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidPrefixOperandType(operator, right) => write!(
+                f,
+                "unsupported operand type for {} operator: `{}` ({})",
+                operator,
+                right.typename(),
+                right,
+            ),
+            // TODO: Better error messages like "cannot add `bool` and `bool`"
+            Self::InvalidInfixOperandType(operator, left, right) => write!(
+                f,
+                "unsupported operand type(s) for {} operator: `{}` ({}) and `{}` ({})",
+                operator,
+                left.typename(),
+                left,
+                right.typename(),
+                right
+            ),
+            Self::ExpectedBooleanCondition(expression) => write!(
+                f,
+                "expected a `boolean` condition but got `{}` ({})",
+                expression.typename(),
+                expression
+            ),
         }
     }
 }

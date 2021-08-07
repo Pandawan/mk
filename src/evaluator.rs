@@ -1,6 +1,6 @@
 use crate::{
     ast::{BlockExpression, Expression, Program, Statement},
-    object::Object,
+    object::{Object, RuntimeError},
     token::Token,
 };
 
@@ -106,7 +106,7 @@ impl Evaluator {
         match operator {
             Token::Bang => self.eval_bang_operator_expression(right),
             Token::Minus => self.eval_minus_prefix_operator_expression(right),
-            _ => Object::Error(format!("unknown prefix operator {}{:?}", operator, right)),
+            _ => panic!("unknown prefix operator {}{:?}", operator, right),
         }
     }
 
@@ -114,10 +114,10 @@ impl Evaluator {
         match right {
             Object::Boolean(true) => Object::Boolean(false),
             Object::Boolean(false) => Object::Boolean(true),
-            _ => Object::Error(format!(
-                "invalid operand type `{}` for ! operator",
-                right.typename()
-            )),
+            _ => Object::Error(Box::new(RuntimeError::InvalidPrefixOperandType(
+                Token::Bang,
+                right,
+            ))),
         }
     }
 
@@ -125,10 +125,10 @@ impl Evaluator {
         match right {
             Object::Integer(value) => Object::Integer(-value),
             Object::Float(value) => Object::Float(-value),
-            _ => Object::Error(format!(
-                "invalid operand type `{}` for - operator",
-                right.typename()
-            )),
+            _ => Object::Error(Box::new(RuntimeError::InvalidPrefixOperandType(
+                Token::Minus,
+                right,
+            ))),
         }
     }
 
@@ -152,10 +152,9 @@ impl Evaluator {
                 self.eval_boolean_infix_expression(operator, left_value, right_value)
             }
 
-            (left, right) => Object::Error(format!(
-                "type mismatch for {}: {:?} and {:?}",
-                operator, left, right
-            )),
+            (left, right) => Object::Error(Box::new(RuntimeError::InvalidInfixOperandType(
+                operator, left, right,
+            ))),
         }
     }
 
@@ -178,12 +177,11 @@ impl Evaluator {
             Token::EqualEqual => Object::Boolean(left_value == right_value),
             Token::BangEqual => Object::Boolean(left_value != right_value),
 
-            operator => Object::Error(format!(
-                "unknown infix operator: {:?} {} {:?}",
-                Object::Integer(left_value),
+            operator => Object::Error(Box::new(RuntimeError::InvalidInfixOperandType(
                 operator,
-                Object::Integer(right_value)
-            )),
+                Object::Integer(left_value),
+                Object::Integer(right_value),
+            ))),
         }
     }
 
@@ -206,13 +204,11 @@ impl Evaluator {
             Token::EqualEqual => Object::Boolean(left_value == right_value),
             Token::BangEqual => Object::Boolean(left_value != right_value),
 
-            // TODO: Better error messages like rust "cannot add `bool` and `bool`"
-            operator => Object::Error(format!(
-                "unknown infix operator: {:?} {} {:?}",
-                Object::Float(left_value),
+            operator => Object::Error(Box::new(RuntimeError::InvalidInfixOperandType(
                 operator,
-                Object::Float(right_value)
-            )),
+                Object::Float(left_value),
+                Object::Float(right_value),
+            ))),
         }
     }
 
@@ -227,12 +223,11 @@ impl Evaluator {
             Token::EqualEqual => Object::Boolean(left_value == right_value),
             Token::BangEqual => Object::Boolean(left_value != right_value),
 
-            operator => Object::Error(format!(
-                "unknown infix operator: {:?} {} {:?}",
-                Object::Boolean(left_value),
+            operator => Object::Error(Box::new(RuntimeError::InvalidInfixOperandType(
                 operator,
-                Object::Boolean(right_value)
-            )),
+                Object::Boolean(left_value),
+                Object::Boolean(right_value),
+            ))),
         }
     }
 
@@ -261,14 +256,20 @@ impl Evaluator {
                     Object::Nil
                 }
             }
-            obj => Object::Error(format!("expected `boolean` condition but got {:?}", obj)),
+            obj => Object::Error(Box::new(RuntimeError::ExpectedBooleanCondition(obj))),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{evaluator::Evaluator, lexer::Lexer, object::Object, parser::Parser};
+    use crate::{
+        evaluator::Evaluator,
+        lexer::Lexer,
+        object::{Object, RuntimeError},
+        parser::Parser,
+        token::Token,
+    };
 
     #[test]
     fn eval_integer_expression() {
@@ -435,28 +436,51 @@ mod tests {
         let tests = vec![
             (
                 "5 + true;",
-                "type mismatch for +: Integer(5) and Boolean(true)",
+                RuntimeError::InvalidInfixOperandType(
+                    Token::Plus,
+                    Object::Integer(5),
+                    Object::Boolean(true),
+                ),
             ),
             (
                 "5 + true; 5;",
-                "type mismatch for +: Integer(5) and Boolean(true)",
+                RuntimeError::InvalidInfixOperandType(
+                    Token::Plus,
+                    Object::Integer(5),
+                    Object::Boolean(true),
+                ),
             ),
-            ("-true", "invalid operand type `boolean` for - operator"),
+            (
+                "-true",
+                RuntimeError::InvalidPrefixOperandType(Token::Minus, Object::Boolean(true)),
+            ),
             (
                 "true + false;",
-                "unknown infix operator: Boolean(true) + Boolean(false)",
+                RuntimeError::InvalidInfixOperandType(
+                    Token::Plus,
+                    Object::Boolean(true),
+                    Object::Boolean(false),
+                ),
             ),
             (
                 "5; true + false; 5",
-                "unknown infix operator: Boolean(true) + Boolean(false)",
+                RuntimeError::InvalidInfixOperandType(
+                    Token::Plus,
+                    Object::Boolean(true),
+                    Object::Boolean(false),
+                ),
             ),
             (
                 "if 10 > 1 { true + false; }",
-                "unknown infix operator: Boolean(true) + Boolean(false)",
+                RuntimeError::InvalidInfixOperandType(
+                    Token::Plus,
+                    Object::Boolean(true),
+                    Object::Boolean(false),
+                ),
             ),
             (
                 "if 1 { true + false; }",
-                "expected `boolean` condition but got Integer(1)",
+                RuntimeError::ExpectedBooleanCondition(Object::Integer(1)),
             ),
             (
                 "
@@ -467,7 +491,11 @@ mod tests {
                   return 1;
                 }
                 ",
-                "unknown infix operator: Boolean(true) + Boolean(false)",
+                RuntimeError::InvalidInfixOperandType(
+                    Token::Plus,
+                    Object::Boolean(true),
+                    Object::Boolean(false),
+                ),
             ),
         ];
 
@@ -544,13 +572,13 @@ mod tests {
         }
     }
 
-    fn test_error_object(obj: Object, expected_message: &str) {
+    fn test_error_object(obj: Object, expected_error: RuntimeError) {
         match obj {
-            Object::Error(message) => {
-                if message != expected_message {
+            Object::Error(err) => {
+                if *err != expected_error {
                     panic!(
-                        "expected error message to be \"{}\" but got \"{}\"",
-                        expected_message, message
+                        "expected error to be \"{:?}\" but got \"{:?}\"",
+                        expected_error, err
                     )
                 }
             }
