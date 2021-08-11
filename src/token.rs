@@ -49,15 +49,17 @@ pub enum Token {
 impl Token {
     /// Get the Token for the given keyword, if valid.
     pub fn lookup_keyword(s: &str) -> Option<Token> {
+        use Token::*;
+
         match s {
-            "true" => Some(Token::True),
-            "false" => Some(Token::False),
-            "nil" => Some(Token::Nil),
-            "fn" => Some(Token::Fn),
-            "let" => Some(Token::Let),
-            "if" => Some(Token::If),
-            "else" => Some(Token::Else),
-            "return" => Some(Token::Return),
+            "true" => Some(True),
+            "false" => Some(False),
+            "nil" => Some(Nil),
+            "fn" => Some(Fn),
+            "let" => Some(Let),
+            "if" => Some(If),
+            "else" => Some(Else),
+            "return" => Some(Return),
             _ => None,
         }
     }
@@ -65,45 +67,47 @@ impl Token {
 
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use Token::*;
+
         match self {
-            Token::Plus => write!(f, "+"),
-            Token::Minus => write!(f, "-"),
-            Token::Star => write!(f, "*"),
-            Token::Slash => write!(f, "/"),
-            Token::Equal => write!(f, "="),
-            Token::Bang => write!(f, "!"),
-            Token::StarStar => write!(f, "**"),
+            Plus => write!(f, "+"),
+            Minus => write!(f, "-"),
+            Star => write!(f, "*"),
+            Slash => write!(f, "/"),
+            Equal => write!(f, "="),
+            Bang => write!(f, "!"),
+            StarStar => write!(f, "**"),
 
-            Token::EqualEqual => write!(f, "=="),
-            Token::BangEqual => write!(f, "!="),
-            Token::LessThan => write!(f, "<"),
-            Token::GreaterThan => write!(f, ">"),
-            Token::LessEqual => write!(f, "<="),
-            Token::GreaterEqual => write!(f, ">="),
+            EqualEqual => write!(f, "=="),
+            BangEqual => write!(f, "!="),
+            LessThan => write!(f, "<"),
+            GreaterThan => write!(f, ">"),
+            LessEqual => write!(f, "<="),
+            GreaterEqual => write!(f, ">="),
 
-            Token::Comma => write!(f, ","),
-            Token::Semicolon => write!(f, ";"),
-            Token::LeftParen => write!(f, "("),
-            Token::RightParen => write!(f, ")"),
-            Token::LeftBrace => write!(f, "{{"),
-            Token::RightBrace => write!(f, "}}"),
+            Comma => write!(f, ","),
+            Semicolon => write!(f, ";"),
+            LeftParen => write!(f, "("),
+            RightParen => write!(f, ")"),
+            LeftBrace => write!(f, "{{"),
+            RightBrace => write!(f, "}}"),
 
-            Token::Identifier(name) => write!(f, "{}", name),
-            Token::Integer(value) => write!(f, "{}", value),
+            Identifier(name) => write!(f, "{}", name),
+            Integer(value) => write!(f, "{}", value),
             /* TODO: This may not always print the correct value.
             e.g. `1.0` will print `1` */
-            Token::Float(value) => write!(f, "{}", value),
+            Float(value) => write!(f, "{}", value),
 
-            Token::True => write!(f, "true"),
-            Token::False => write!(f, "false"),
-            Token::Nil => write!(f, "nil"),
-            Token::Fn => write!(f, "fn"),
-            Token::Let => write!(f, "let"),
-            Token::If => write!(f, "if"),
-            Token::Else => write!(f, "else"),
-            Token::Return => write!(f, "return"),
+            True => write!(f, "true"),
+            False => write!(f, "false"),
+            Nil => write!(f, "nil"),
+            Fn => write!(f, "fn"),
+            Let => write!(f, "let"),
+            If => write!(f, "if"),
+            Else => write!(f, "else"),
+            Return => write!(f, "return"),
 
-            Token::Eof => write!(f, "EOF"),
+            Eof => write!(f, "EOF"),
             // tok => write!(f, "{:?}", tok),
         }
     }

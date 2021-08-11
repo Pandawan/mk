@@ -47,16 +47,18 @@ pub enum Statement {
 
 impl Display for Statement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use Statement::*;
+
         match self {
-            Self::Let { name, value } => write!(
+            Let { name, value } => write!(
                 f,
                 "{tok} {ident} = {val};",
                 tok = Token::Let,
                 ident = name,
                 val = value
             ),
-            Self::Return { value } => write!(f, "{} {}", Token::Return, value),
-            Self::Expression { expression } => write!(f, "{}", expression),
+            Return { value } => write!(f, "{} {}", Token::Return, value),
+            Expression { expression } => write!(f, "{}", expression),
         }
     }
 }
@@ -81,19 +83,21 @@ pub enum Expression {
 
 impl Display for Expression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Identifier(name) => write!(f, "{}", name),
-            Self::Integer(value) => write!(f, "{}", value),
-            Self::Float(value) => write!(f, "{}", value),
-            Self::Boolean(value) => write!(f, "{}", value),
-            Self::Nil => write!(f, "nil"),
+        use Expression::*;
 
-            Self::Prefix(prefix) => write!(f, "{}", prefix),
-            Self::Infix(infix) => write!(f, "{}", infix),
-            Self::Block(block) => write!(f, "{}", block),
-            Self::If(if_exp) => write!(f, "{}", if_exp),
-            Self::Function(func) => write!(f, "{}", func),
-            Self::Call(call) => write!(f, "{}", call),
+        match self {
+            Identifier(name) => write!(f, "{}", name),
+            Integer(value) => write!(f, "{}", value),
+            Float(value) => write!(f, "{}", value),
+            Boolean(value) => write!(f, "{}", value),
+            Nil => write!(f, "nil"),
+
+            Prefix(prefix) => write!(f, "{}", prefix),
+            Infix(infix) => write!(f, "{}", infix),
+            Block(block) => write!(f, "{}", block),
+            If(if_exp) => write!(f, "{}", if_exp),
+            Function(func) => write!(f, "{}", func),
+            Call(call) => write!(f, "{}", call),
         }
     }
 }

@@ -17,13 +17,15 @@ pub enum Object {
 
 impl Object {
     pub fn typename(&self) -> String {
+        use Object::*;
+
         match self {
-            Self::Integer(_) => "integer".into(),
-            Self::Float(_) => "float".into(),
-            Self::Boolean(_) => "boolean".into(),
-            Self::Nil => "nil".into(),
-            Self::ReturnValue(obj) => obj.typename(),
-            Self::Error(_) => "error".into(),
+            Integer(_) => "integer".into(),
+            Float(_) => "float".into(),
+            Boolean(_) => "boolean".into(),
+            Nil => "nil".into(),
+            ReturnValue(obj) => obj.typename(),
+            Error(_) => "error".into(),
         }
     }
 
@@ -37,13 +39,15 @@ impl Object {
 
 impl Display for Object {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use Object::*;
+
         match self {
-            Self::Integer(value) => write!(f, "{}", value),
-            Self::Float(value) => write!(f, "{}", ryu::Buffer::new().format(*value)),
-            Self::Boolean(value) => write!(f, "{}", value),
-            Self::Nil => write!(f, "nil"),
-            Self::ReturnValue(obj) => write!(f, "{}", obj),
-            Self::Error(message) => write!(f, "Error: {}", message),
+            Integer(value) => write!(f, "{}", value),
+            Float(value) => write!(f, "{}", ryu::Buffer::new().format(*value)),
+            Boolean(value) => write!(f, "{}", value),
+            Nil => write!(f, "nil"),
+            ReturnValue(obj) => write!(f, "{}", obj),
+            Error(message) => write!(f, "Error: {}", message),
         }
     }
 }
@@ -62,8 +66,10 @@ pub enum RuntimeError {
 
 impl Display for RuntimeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use RuntimeError::*;
+
         match self {
-            Self::InvalidPrefixOperandType(operator, right) => write!(
+            InvalidPrefixOperandType(operator, right) => write!(
                 f,
                 "unsupported operand type for {} operator: `{}` ({})",
                 operator,
@@ -71,7 +77,7 @@ impl Display for RuntimeError {
                 right,
             ),
             // TODO: Better error messages like "cannot add `bool` and `bool`"
-            Self::InvalidInfixOperandType(operator, left, right) => write!(
+            InvalidInfixOperandType(operator, left, right) => write!(
                 f,
                 "unsupported operand type(s) for {} operator: `{}` ({}) and `{}` ({})",
                 operator,
@@ -80,13 +86,13 @@ impl Display for RuntimeError {
                 right.typename(),
                 right
             ),
-            Self::ExpectedBooleanCondition(expression) => write!(
+            ExpectedBooleanCondition(expression) => write!(
                 f,
                 "expected a `boolean` condition but got `{}` ({})",
                 expression.typename(),
                 expression
             ),
-            Self::IdentifierNotFound(name) => write!(f, "identifier '{}' not found", name),
+            IdentifierNotFound(name) => write!(f, "identifier '{}' not found", name),
         }
     }
 }

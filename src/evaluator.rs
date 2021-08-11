@@ -81,7 +81,6 @@ impl Evaluator {
 
                 Rc::new(Object::Nil)
             }
-            _ => todo!("Implement other statements"),
         }
     }
 
@@ -140,6 +139,7 @@ impl Evaluator {
         match operator {
             Token::Bang => self.eval_bang_operator_expression(right),
             Token::Minus => self.eval_minus_prefix_operator_expression(right),
+            // NOTE: Evaluator incorrectly asked to evaluate given operator as a prefix
             _ => panic!("unknown prefix operator {}{:?}", operator, right),
         }
     }
