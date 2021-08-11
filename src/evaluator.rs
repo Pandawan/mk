@@ -1,26 +1,37 @@
+use std::{cell::RefCell, rc::Rc};
+
 use crate::{
-    ast::{BlockExpression, Expression, Program, Statement},
+    ast::{BlockExpression, Expression, IdentifierLiteral, Program, Statement},
+    environment::Environment,
     object::{Object, RuntimeError},
     token::Token,
 };
 
-pub struct Evaluator {}
+pub struct Evaluator {
+    env: Rc<RefCell<Environment>>,
+}
 
 impl Evaluator {
     pub fn new() -> Self {
-        Evaluator {}
+        Self::new_with_env(Rc::new(RefCell::new(Environment::new())))
     }
 
-    pub fn eval(&self, prog: Program) -> Option<Object> {
-        let mut result = None;
+    pub fn new_with_env(env: Rc<RefCell<Environment>>) -> Self {
+        Evaluator { env }
+    }
+
+    pub fn eval(&mut self, prog: Program) -> Rc<Object> {
+        let mut result = Rc::new(Object::Nil);
 
         for stmt in prog.statements {
-            match self.eval_statement(stmt) {
+            let val = self.eval_statement(stmt);
+
+            match val.as_ref() {
                 // If a return value is found, immediately return and stop evaluating statements
                 // Unwrap the return value into a final value so the program can use it
-                Object::ReturnValue(obj) => return Some(*obj),
-                Object::Error(message) => return Some(Object::Error(message)),
-                obj => result = Some(obj),
+                Object::ReturnValue(inner_value) => return Rc::clone(inner_value),
+                Object::Error(_) => return val,
+                _ => result = val,
             }
         }
 
@@ -28,23 +39,25 @@ impl Evaluator {
     }
 
     // Similar to eval (for programs) but doesn't unwrap return values
-    fn eval_block_expression(&self, block: BlockExpression) -> Option<Object> {
-        let mut result = None;
+    fn eval_block_expression(&mut self, block: BlockExpression) -> Rc<Object> {
+        let mut result = Rc::new(Object::Nil);
 
         for stmt in block.statements {
-            match self.eval_statement(stmt) {
+            let val = self.eval_statement(stmt);
+
+            match val.as_ref() {
                 // If a return value is found, immediately return and stop evaluating statements
                 // Don't unwrap the return value, we might be in a nested block which also needs to return
-                Object::ReturnValue(obj) => return Some(Object::ReturnValue(obj)),
-                Object::Error(message) => return Some(Object::Error(message)),
-                obj => result = Some(obj),
+                Object::ReturnValue(_) => return val,
+                Object::Error(_) => return val,
+                _ => result = val,
             }
         }
 
         return result;
     }
 
-    fn eval_statement(&self, stmt: Statement) -> Object {
+    fn eval_statement(&mut self, stmt: Statement) -> Rc<Object> {
         match stmt {
             Statement::Expression { expression } => self.eval_expression(expression),
             Statement::Return { value } => {
@@ -55,18 +68,31 @@ impl Evaluator {
                     return obj;
                 }
 
-                return Object::ReturnValue(Box::new(obj));
+                Rc::new(Object::ReturnValue(obj))
+            }
+            Statement::Let { name, value } => {
+                let obj = self.eval_expression(value);
+                // Early return the first error received
+                if obj.is_error() {
+                    return obj;
+                }
+                // Add the variable to the surrounding environment
+                self.env.borrow_mut().set(name, obj);
+
+                Rc::new(Object::Nil)
             }
             _ => todo!("Implement other statements"),
         }
     }
 
-    fn eval_expression(&self, expr: Expression) -> Object {
+    fn eval_expression(&mut self, expr: Expression) -> Rc<Object> {
         match expr {
-            Expression::Integer(value) => Object::Integer(value),
-            Expression::Float(value) => Object::Float(value),
-            Expression::Boolean(value) => Object::Boolean(value),
-            Expression::Nil => Object::Nil,
+            Expression::Integer(value) => Rc::new(Object::Integer(value)),
+            Expression::Float(value) => Rc::new(Object::Float(value)),
+            Expression::Boolean(value) => Rc::new(Object::Boolean(value)),
+            Expression::Nil => Rc::new(Object::Nil),
+            Expression::Identifier(identifier) => self.eval_identifier_expression(identifier),
+
             Expression::Prefix(prefix) => {
                 let right = self.eval_expression(prefix.right);
                 // Early return the first error received
@@ -89,10 +115,7 @@ impl Evaluator {
                 self.eval_infix_expression(infix.operator, left, right)
             }
 
-            Expression::Block(block) => self
-                .eval_block_expression(*block)
-                // Blocks return nil unless a value is given
-                .unwrap_or(Object::Nil),
+            Expression::Block(block) => self.eval_block_expression(*block),
 
             Expression::If(if_expr) => {
                 self.eval_if_expression(if_expr.condition, if_expr.consequence, if_expr.alternative)
@@ -102,7 +125,18 @@ impl Evaluator {
         }
     }
 
-    fn eval_prefix_expression(&self, operator: Token, right: Object) -> Object {
+    fn eval_identifier_expression(&self, identifier: IdentifierLiteral) -> Rc<Object> {
+        let result = self.env.borrow().get(&identifier.name);
+
+        match result {
+            Some(obj) => obj,
+            None => Rc::new(Object::Error(RuntimeError::IdentifierNotFound(
+                identifier.name,
+            ))),
+        }
+    }
+
+    fn eval_prefix_expression(&self, operator: Token, right: Rc<Object>) -> Rc<Object> {
         match operator {
             Token::Bang => self.eval_bang_operator_expression(right),
             Token::Minus => self.eval_minus_prefix_operator_expression(right),
@@ -110,49 +144,54 @@ impl Evaluator {
         }
     }
 
-    fn eval_bang_operator_expression(&self, right: Object) -> Object {
-        match right {
-            Object::Boolean(true) => Object::Boolean(false),
-            Object::Boolean(false) => Object::Boolean(true),
-            _ => Object::Error(Box::new(RuntimeError::InvalidPrefixOperandType(
+    fn eval_bang_operator_expression(&self, right: Rc<Object>) -> Rc<Object> {
+        match *right {
+            Object::Boolean(true) => Rc::new(Object::Boolean(false)),
+            Object::Boolean(false) => Rc::new(Object::Boolean(true)),
+            _ => Rc::new(Object::Error(RuntimeError::InvalidPrefixOperandType(
                 Token::Bang,
                 right,
             ))),
         }
     }
 
-    fn eval_minus_prefix_operator_expression(&self, right: Object) -> Object {
-        match right {
-            Object::Integer(value) => Object::Integer(-value),
-            Object::Float(value) => Object::Float(-value),
-            _ => Object::Error(Box::new(RuntimeError::InvalidPrefixOperandType(
+    fn eval_minus_prefix_operator_expression(&self, right: Rc<Object>) -> Rc<Object> {
+        match *right {
+            Object::Integer(value) => Rc::new(Object::Integer(-value)),
+            Object::Float(value) => Rc::new(Object::Float(-value)),
+            _ => Rc::new(Object::Error(RuntimeError::InvalidPrefixOperandType(
                 Token::Minus,
                 right,
             ))),
         }
     }
 
-    fn eval_infix_expression(&self, operator: Token, left: Object, right: Object) -> Object {
-        match (left, right) {
+    fn eval_infix_expression(
+        &self,
+        operator: Token,
+        left: Rc<Object>,
+        right: Rc<Object>,
+    ) -> Rc<Object> {
+        match (left.as_ref(), right.as_ref()) {
             (Object::Integer(left_value), Object::Integer(right_value)) => {
-                self.eval_integer_infix_expression(operator, left_value, right_value)
+                self.eval_integer_infix_expression(operator, *left_value, *right_value)
             }
 
             (Object::Float(left_value), Object::Float(right_value)) => {
-                self.eval_float_infix_expression(operator, left_value, right_value)
+                self.eval_float_infix_expression(operator, *left_value, *right_value)
             }
             (Object::Float(left_value), Object::Integer(right_value)) => {
-                self.eval_float_infix_expression(operator, left_value, right_value as f64)
+                self.eval_float_infix_expression(operator, *left_value, *right_value as f64)
             }
             (Object::Integer(left_value), Object::Float(right_value)) => {
-                self.eval_float_infix_expression(operator, left_value as f64, right_value)
+                self.eval_float_infix_expression(operator, *left_value as f64, *right_value)
             }
 
             (Object::Boolean(left_value), Object::Boolean(right_value)) => {
-                self.eval_boolean_infix_expression(operator, left_value, right_value)
+                self.eval_boolean_infix_expression(operator, *left_value, *right_value)
             }
 
-            (left, right) => Object::Error(Box::new(RuntimeError::InvalidInfixOperandType(
+            (_, _) => Rc::new(Object::Error(RuntimeError::InvalidInfixOperandType(
                 operator, left, right,
             ))),
         }
@@ -163,24 +202,25 @@ impl Evaluator {
         operator: Token,
         left_value: i64,
         right_value: i64,
-    ) -> Object {
+    ) -> Rc<Object> {
         match operator {
-            Token::Plus => Object::Integer(left_value + right_value),
-            Token::Minus => Object::Integer(left_value - right_value),
-            Token::Star => Object::Integer(left_value * right_value),
-            Token::Slash => Object::Integer(left_value / right_value),
+            Token::Plus => Rc::new(Object::Integer(left_value + right_value)),
+            Token::Minus => Rc::new(Object::Integer(left_value - right_value)),
+            Token::Star => Rc::new(Object::Integer(left_value * right_value)),
+            Token::Slash => Rc::new(Object::Integer(left_value / right_value)),
 
-            Token::LessThan => Object::Boolean(left_value < right_value),
-            Token::LessEqual => Object::Boolean(left_value <= right_value),
-            Token::GreaterThan => Object::Boolean(left_value > right_value),
-            Token::GreaterEqual => Object::Boolean(left_value >= right_value),
-            Token::EqualEqual => Object::Boolean(left_value == right_value),
-            Token::BangEqual => Object::Boolean(left_value != right_value),
+            Token::LessThan => Rc::new(Object::Boolean(left_value < right_value)),
+            Token::LessEqual => Rc::new(Object::Boolean(left_value <= right_value)),
+            Token::GreaterThan => Rc::new(Object::Boolean(left_value > right_value)),
+            Token::GreaterEqual => Rc::new(Object::Boolean(left_value >= right_value)),
+            Token::EqualEqual => Rc::new(Object::Boolean(left_value == right_value)),
+            Token::BangEqual => Rc::new(Object::Boolean(left_value != right_value)),
 
-            operator => Object::Error(Box::new(RuntimeError::InvalidInfixOperandType(
+            operator => Rc::new(Object::Error(RuntimeError::InvalidInfixOperandType(
                 operator,
-                Object::Integer(left_value),
-                Object::Integer(right_value),
+                // TODO: Find a way to keep using the previous Object::Integer rather than creating a new one
+                Rc::new(Object::Integer(left_value)),
+                Rc::new(Object::Integer(right_value)),
             ))),
         }
     }
@@ -190,24 +230,25 @@ impl Evaluator {
         operator: Token,
         left_value: f64,
         right_value: f64,
-    ) -> Object {
+    ) -> Rc<Object> {
         match operator {
-            Token::Plus => Object::Float(left_value + right_value),
-            Token::Minus => Object::Float(left_value - right_value),
-            Token::Star => Object::Float(left_value * right_value),
-            Token::Slash => Object::Float(left_value / right_value),
+            Token::Plus => Rc::new(Object::Float(left_value + right_value)),
+            Token::Minus => Rc::new(Object::Float(left_value - right_value)),
+            Token::Star => Rc::new(Object::Float(left_value * right_value)),
+            Token::Slash => Rc::new(Object::Float(left_value / right_value)),
 
-            Token::LessThan => Object::Boolean(left_value < right_value),
-            Token::LessEqual => Object::Boolean(left_value <= right_value),
-            Token::GreaterThan => Object::Boolean(left_value > right_value),
-            Token::GreaterEqual => Object::Boolean(left_value >= right_value),
-            Token::EqualEqual => Object::Boolean(left_value == right_value),
-            Token::BangEqual => Object::Boolean(left_value != right_value),
+            Token::LessThan => Rc::new(Object::Boolean(left_value < right_value)),
+            Token::LessEqual => Rc::new(Object::Boolean(left_value <= right_value)),
+            Token::GreaterThan => Rc::new(Object::Boolean(left_value > right_value)),
+            Token::GreaterEqual => Rc::new(Object::Boolean(left_value >= right_value)),
+            Token::EqualEqual => Rc::new(Object::Boolean(left_value == right_value)),
+            Token::BangEqual => Rc::new(Object::Boolean(left_value != right_value)),
 
-            operator => Object::Error(Box::new(RuntimeError::InvalidInfixOperandType(
+            operator => Rc::new(Object::Error(RuntimeError::InvalidInfixOperandType(
                 operator,
-                Object::Float(left_value),
-                Object::Float(right_value),
+                // TODO: Find a way to keep using the previous Object::Integer rather than creating a new one
+                Rc::new(Object::Float(left_value)),
+                Rc::new(Object::Float(right_value)),
             ))),
         }
     }
@@ -217,52 +258,54 @@ impl Evaluator {
         operator: Token,
         left_value: bool,
         right_value: bool,
-    ) -> Object {
+    ) -> Rc<Object> {
         match operator {
             // NOTE: No truthy/implicit conversion
-            Token::EqualEqual => Object::Boolean(left_value == right_value),
-            Token::BangEqual => Object::Boolean(left_value != right_value),
+            Token::EqualEqual => Rc::new(Object::Boolean(left_value == right_value)),
+            Token::BangEqual => Rc::new(Object::Boolean(left_value != right_value)),
 
-            operator => Object::Error(Box::new(RuntimeError::InvalidInfixOperandType(
+            operator => Rc::new(Object::Error(RuntimeError::InvalidInfixOperandType(
                 operator,
-                Object::Boolean(left_value),
-                Object::Boolean(right_value),
+                // TODO: Find a way to keep using the previous Object::Boolean rather than creating a new one
+                Rc::new(Object::Boolean(left_value)),
+                Rc::new(Object::Boolean(right_value)),
             ))),
         }
     }
 
     fn eval_if_expression(
-        &self,
+        &mut self,
         condition: Expression,
         consequence: BlockExpression,
         alternative: Option<Expression>,
-    ) -> Object {
+    ) -> Rc<Object> {
         let evaluated_condition = self.eval_expression(condition);
         // Early return the first error received
         if evaluated_condition.is_error() {
             return evaluated_condition;
         }
 
-        match evaluated_condition {
+        match *evaluated_condition {
             Object::Boolean(value) => {
                 if value {
-                    // TODO: I don't like repeating this part in both eval_expression and eval_if_expression, maybe consolidate it
                     self.eval_block_expression(consequence)
-                        // Blocks return nil unless a value is given
-                        .unwrap_or(Object::Nil)
                 } else if let Some(alternative) = alternative {
                     self.eval_expression(alternative)
                 } else {
-                    Object::Nil
+                    Rc::new(Object::Nil)
                 }
             }
-            obj => Object::Error(Box::new(RuntimeError::ExpectedBooleanCondition(obj))),
+            _ => Rc::new(Object::Error(RuntimeError::ExpectedBooleanCondition(
+                evaluated_condition,
+            ))),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::rc::Rc;
+
     use crate::{
         evaluator::Evaluator,
         lexer::Lexer,
@@ -432,55 +475,73 @@ mod tests {
     }
 
     #[test]
+    fn eval_let_statements() {
+        let tests = vec![
+            ("let a = 5; a;", 5),
+            ("let a = 5 * 5; a;", 25),
+            ("let a = 5; let b = a; b;", 5),
+            ("let a = 5; let b = a; let c = a + b + 5; c;", 15),
+        ];
+
+        for (input, expected_value) in tests {
+            let evaluated = evaluate(input);
+            test_integer_object(evaluated, expected_value)
+        }
+    }
+
+    #[test]
     fn error_handling() {
         let tests = vec![
             (
                 "5 + true;",
                 RuntimeError::InvalidInfixOperandType(
                     Token::Plus,
-                    Object::Integer(5),
-                    Object::Boolean(true),
+                    Rc::new(Object::Integer(5)),
+                    Rc::new(Object::Boolean(true)),
                 ),
             ),
             (
                 "5 + true; 5;",
                 RuntimeError::InvalidInfixOperandType(
                     Token::Plus,
-                    Object::Integer(5),
-                    Object::Boolean(true),
+                    Rc::new(Object::Integer(5)),
+                    Rc::new(Object::Boolean(true)),
                 ),
             ),
             (
                 "-true",
-                RuntimeError::InvalidPrefixOperandType(Token::Minus, Object::Boolean(true)),
+                RuntimeError::InvalidPrefixOperandType(
+                    Token::Minus,
+                    Rc::new(Object::Boolean(true)),
+                ),
             ),
             (
                 "true + false;",
                 RuntimeError::InvalidInfixOperandType(
                     Token::Plus,
-                    Object::Boolean(true),
-                    Object::Boolean(false),
+                    Rc::new(Object::Boolean(true)),
+                    Rc::new(Object::Boolean(false)),
                 ),
             ),
             (
                 "5; true + false; 5",
                 RuntimeError::InvalidInfixOperandType(
                     Token::Plus,
-                    Object::Boolean(true),
-                    Object::Boolean(false),
+                    Rc::new(Object::Boolean(true)),
+                    Rc::new(Object::Boolean(false)),
                 ),
             ),
             (
                 "if 10 > 1 { true + false; }",
                 RuntimeError::InvalidInfixOperandType(
                     Token::Plus,
-                    Object::Boolean(true),
-                    Object::Boolean(false),
+                    Rc::new(Object::Boolean(true)),
+                    Rc::new(Object::Boolean(false)),
                 ),
             ),
             (
                 "if 1 { true + false; }",
-                RuntimeError::ExpectedBooleanCondition(Object::Integer(1)),
+                RuntimeError::ExpectedBooleanCondition(Rc::new(Object::Integer(1))),
             ),
             (
                 "
@@ -493,10 +554,11 @@ mod tests {
                 ",
                 RuntimeError::InvalidInfixOperandType(
                     Token::Plus,
-                    Object::Boolean(true),
-                    Object::Boolean(false),
+                    Rc::new(Object::Boolean(true)),
+                    Rc::new(Object::Boolean(false)),
                 ),
             ),
+            ("foobar", RuntimeError::IdentifierNotFound("foobar".into())),
         ];
 
         for (input, expected_error) in tests {
@@ -505,16 +567,13 @@ mod tests {
         }
     }
 
-    fn evaluate(input: &str) -> Object {
+    fn evaluate(input: &str) -> Rc<Object> {
         let l = Lexer::new(input);
         let mut p = Parser::new(l);
         let prog = p.parse_program();
 
         match prog {
-            Ok(prog) => match Evaluator::new().eval(prog) {
-                Some(obj) => obj,
-                None => panic!("Expected object result but got None"),
-            },
+            Ok(prog) => Evaluator::new().eval(prog),
             Err(errors) => {
                 println!("parser had {} errors", errors.len());
                 for error in errors {
@@ -525,8 +584,8 @@ mod tests {
         }
     }
 
-    fn test_integer_object(obj: Object, expected_value: i64) {
-        match obj {
+    fn test_integer_object(obj: Rc<Object>, expected_value: i64) {
+        match *obj {
             Object::Integer(value) => {
                 if value != expected_value {
                     panic!(
@@ -539,8 +598,8 @@ mod tests {
         }
     }
 
-    fn test_float_object(obj: Object, expected_value: f64) {
-        match obj {
+    fn test_float_object(obj: Rc<Object>, expected_value: f64) {
+        match *obj {
             Object::Float(value) => {
                 if value != expected_value {
                     panic!(
@@ -552,8 +611,8 @@ mod tests {
             _ => panic!("expected float object but got {:?}", obj),
         }
     }
-    fn test_boolean_object(obj: Object, expected_value: bool) {
-        match obj {
+    fn test_boolean_object(obj: Rc<Object>, expected_value: bool) {
+        match *obj {
             Object::Boolean(value) => {
                 if value != expected_value {
                     panic!(
@@ -566,14 +625,14 @@ mod tests {
         }
     }
 
-    fn test_null_object(obj: Object) {
-        if obj != Object::Nil {
+    fn test_null_object(obj: Rc<Object>) {
+        if *obj != Object::Nil {
             panic!("expected null object but got {:?}", obj)
         }
     }
 
-    fn test_error_object(obj: Object, expected_error: RuntimeError) {
-        match obj {
+    fn test_error_object(obj: Rc<Object>, expected_error: RuntimeError) {
+        match obj.as_ref() {
             Object::Error(err) => {
                 if *err != expected_error {
                     panic!(

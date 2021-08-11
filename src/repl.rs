@@ -1,6 +1,10 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 
+use crate::environment::Environment;
 use crate::evaluator::Evaluator;
 use crate::lexer::Lexer;
 use crate::parser::Parser;
@@ -9,6 +13,8 @@ const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
 pub fn repl() {
     println!("mk language v{}", VERSION);
+
+    let env = Rc::new(RefCell::new(Environment::new()));
 
     // `()` can be used when no completer is required
     let mut rl = Editor::<()>::new();
@@ -19,6 +25,10 @@ pub fn repl() {
                 if line == "exit" || line == "quit" {
                     break;
                 }
+                // Skip empty lines
+                else if line.trim().is_empty() {
+                    continue;
+                }
 
                 rl.add_history_entry(line.as_str());
 
@@ -28,11 +38,10 @@ pub fn repl() {
 
                 match prog {
                     Ok(prog) => {
-                        let e = Evaluator::new();
+                        let mut e = Evaluator::new_with_env(Rc::clone(&env));
+                        let value = e.eval(prog);
 
-                        if let Some(obj) = e.eval(prog) {
-                            println!("{}", obj);
-                        }
+                        println!("{}", value);
                     }
                     Err(errors) => {
                         println!("Parser errors:");

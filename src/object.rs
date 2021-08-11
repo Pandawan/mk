@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, rc::Rc};
 
 use crate::token::Token;
 
@@ -10,9 +10,9 @@ pub enum Object {
     Nil,
     /// Special object to encapsulate a return-ed value while it goes up scopes.
     /// This is never seen by the user.
-    ReturnValue(Box<Object>),
+    ReturnValue(Rc<Object>),
     // TODO: Add Spans to the entire codebase so errors can report a trace
-    Error(Box<RuntimeError>),
+    Error(RuntimeError),
 }
 
 impl Object {
@@ -51,11 +51,13 @@ impl Display for Object {
 #[derive(Debug, PartialEq)]
 pub enum RuntimeError {
     /// When attempting a prefix operation on an invalid type (e.g. !int)
-    InvalidPrefixOperandType(Token, Object),
+    InvalidPrefixOperandType(Token, Rc<Object>),
     /// When attempting an infix operation on invalid types/types that are not compatible (e.g. bool + bool, int + bool)
-    InvalidInfixOperandType(Token, Object, Object),
+    InvalidInfixOperandType(Token, Rc<Object>, Rc<Object>),
     /// When expecting a boolean conditional expression (e.g. if 1)
-    ExpectedBooleanCondition(Object),
+    ExpectedBooleanCondition(Rc<Object>),
+    /// When referencing an identifier that does not exist/has not been defined
+    IdentifierNotFound(String),
 }
 
 impl Display for RuntimeError {
@@ -84,6 +86,7 @@ impl Display for RuntimeError {
                 expression.typename(),
                 expression
             ),
+            Self::IdentifierNotFound(name) => write!(f, "identifier '{}' not found", name),
         }
     }
 }
