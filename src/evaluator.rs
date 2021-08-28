@@ -23,7 +23,7 @@ impl Evaluator {
     pub fn eval(&mut self, prog: Program) -> Rc<Object> {
         let mut result = Rc::new(Object::Nil);
 
-        for stmt in prog.statements {
+        for stmt in &prog.statements {
             let val = self.eval_statement(stmt);
 
             match val.as_ref() {
@@ -39,10 +39,10 @@ impl Evaluator {
     }
 
     // Similar to eval (for programs) but doesn't unwrap return values
-    fn eval_block_expression(&mut self, block: BlockExpression) -> Rc<Object> {
+    fn eval_block_expression(&mut self, block: &BlockExpression) -> Rc<Object> {
         let mut result = Rc::new(Object::Nil);
 
-        for stmt in block.statements {
+        for stmt in &block.statements {
             let val = self.eval_statement(stmt);
 
             match val.as_ref() {
@@ -57,7 +57,7 @@ impl Evaluator {
         return result;
     }
 
-    fn eval_statement(&mut self, stmt: Statement) -> Rc<Object> {
+    fn eval_statement(&mut self, stmt: &Statement) -> Rc<Object> {
         match stmt {
             Statement::Expression { expression } => self.eval_expression(expression),
             Statement::Return { value } => {
@@ -77,65 +77,65 @@ impl Evaluator {
                     return obj;
                 }
                 // Add the variable to the surrounding environment
-                self.env.borrow_mut().set(name, obj);
+                self.env.borrow_mut().set(name.to_owned(), obj);
 
                 Rc::new(Object::Nil)
             }
         }
     }
 
-    fn eval_expression(&mut self, expr: Expression) -> Rc<Object> {
+    fn eval_expression(&mut self, expr: &Expression) -> Rc<Object> {
         match expr {
-            Expression::Integer(value) => Rc::new(Object::Integer(value)),
-            Expression::Float(value) => Rc::new(Object::Float(value)),
-            Expression::Boolean(value) => Rc::new(Object::Boolean(value)),
+            Expression::Integer(value) => Rc::new(Object::Integer(*value)),
+            Expression::Float(value) => Rc::new(Object::Float(*value)),
+            Expression::Boolean(value) => Rc::new(Object::Boolean(*value)),
             Expression::Nil => Rc::new(Object::Nil),
-            Expression::Identifier(identifier) => self.eval_identifier_expression(identifier),
+            Expression::Identifier(identifier) => {
+                self.eval_identifier_expression(identifier.clone())
+            }
 
             Expression::Prefix(prefix) => {
-                let right = self.eval_expression(prefix.right);
+                let right = self.eval_expression(&prefix.right);
                 // Early return the first error received
                 if right.is_error() {
                     return right;
                 }
-                self.eval_prefix_expression(prefix.operator, right)
+                self.eval_prefix_expression(&prefix.operator, right)
             }
             Expression::Infix(infix) => {
-                let left = self.eval_expression(infix.left);
+                let left = self.eval_expression(&infix.left);
                 // Early return the first error received
                 if left.is_error() {
                     return left;
                 }
-                let right = self.eval_expression(infix.right);
+                let right = self.eval_expression(&infix.right);
                 // Early return the first error received
                 if right.is_error() {
                     return right;
                 }
-                self.eval_infix_expression(infix.operator, left, right)
+                self.eval_infix_expression(&infix.operator, left, right)
             }
 
-            Expression::Block(block) => self.eval_block_expression(*block),
+            Expression::Block(block) => self.eval_block_expression(&block),
 
-            Expression::If(if_expr) => {
-                self.eval_if_expression(if_expr.condition, if_expr.consequence, if_expr.alternative)
-            }
+            Expression::If(if_expr) => self.eval_if_expression(
+                &if_expr.condition,
+                &if_expr.consequence,
+                &if_expr.alternative,
+            ),
 
-            Expression::Function(func) => {
-                let parameters = func.parameters;
-                let body = func.body;
-                Rc::new(Object::Function(Function {
-                    parameters,
-                    body,
-                    env: Rc::clone(&self.env),
-                }))
-            }
+            Expression::Function(func) => Rc::new(Object::Function(Function {
+                parameters: func.parameters.clone(),
+                body: Rc::clone(&func.body),
+                env: Rc::clone(&self.env),
+            })),
             Expression::Call(call) => {
-                let func = self.eval_expression(call.function);
+                let func = self.eval_expression(&call.function);
                 // Early return the first error received
                 if func.is_error() {
                     return func;
                 }
-                let args = self.eval_expressions(call.arguments);
+                let args = self.eval_expressions(&call.arguments);
                 if args.len() == 1 && args.first().unwrap().is_error() {
                     return Rc::clone(args.first().unwrap());
                 }
@@ -147,7 +147,7 @@ impl Evaluator {
         }
     }
 
-    fn eval_expressions(&mut self, exprs: Vec<Expression>) -> Vec<Rc<Object>> {
+    fn eval_expressions(&mut self, exprs: &Vec<Expression>) -> Vec<Rc<Object>> {
         let mut result = Vec::new();
         for expr in exprs {
             let evaluated = self.eval_expression(expr);
@@ -170,7 +170,7 @@ impl Evaluator {
         }
     }
 
-    fn eval_prefix_expression(&self, operator: Token, right: Rc<Object>) -> Rc<Object> {
+    fn eval_prefix_expression(&self, operator: &Token, right: Rc<Object>) -> Rc<Object> {
         match operator {
             Token::Bang => self.eval_bang_operator_expression(right),
             Token::Minus => self.eval_minus_prefix_operator_expression(right),
@@ -203,7 +203,7 @@ impl Evaluator {
 
     fn eval_infix_expression(
         &self,
-        operator: Token,
+        operator: &Token,
         left: Rc<Object>,
         right: Rc<Object>,
     ) -> Rc<Object> {
@@ -227,14 +227,16 @@ impl Evaluator {
             }
 
             (_, _) => Rc::new(Object::Error(RuntimeError::InvalidInfixOperandType(
-                operator, left, right,
+                operator.clone(),
+                left,
+                right,
             ))),
         }
     }
 
     fn eval_integer_infix_expression(
         &self,
-        operator: Token,
+        operator: &Token,
         left_value: i64,
         right_value: i64,
     ) -> Rc<Object> {
@@ -252,7 +254,7 @@ impl Evaluator {
             Token::BangEqual => Rc::new(Object::Boolean(left_value != right_value)),
 
             operator => Rc::new(Object::Error(RuntimeError::InvalidInfixOperandType(
-                operator,
+                operator.clone(),
                 // TODO: Find a way to keep using the previous Object::Integer rather than creating a new one
                 Rc::new(Object::Integer(left_value)),
                 Rc::new(Object::Integer(right_value)),
@@ -262,7 +264,7 @@ impl Evaluator {
 
     fn eval_float_infix_expression(
         &self,
-        operator: Token,
+        operator: &Token,
         left_value: f64,
         right_value: f64,
     ) -> Rc<Object> {
@@ -280,7 +282,7 @@ impl Evaluator {
             Token::BangEqual => Rc::new(Object::Boolean(left_value != right_value)),
 
             operator => Rc::new(Object::Error(RuntimeError::InvalidInfixOperandType(
-                operator,
+                operator.clone(),
                 // TODO: Find a way to keep using the previous Object::Integer rather than creating a new one
                 Rc::new(Object::Float(left_value)),
                 Rc::new(Object::Float(right_value)),
@@ -290,7 +292,7 @@ impl Evaluator {
 
     fn eval_boolean_infix_expression(
         &self,
-        operator: Token,
+        operator: &Token,
         left_value: bool,
         right_value: bool,
     ) -> Rc<Object> {
@@ -300,7 +302,7 @@ impl Evaluator {
             Token::BangEqual => Rc::new(Object::Boolean(left_value != right_value)),
 
             operator => Rc::new(Object::Error(RuntimeError::InvalidInfixOperandType(
-                operator,
+                operator.clone(),
                 // TODO: Find a way to keep using the previous Object::Boolean rather than creating a new one
                 Rc::new(Object::Boolean(left_value)),
                 Rc::new(Object::Boolean(right_value)),
@@ -310,11 +312,11 @@ impl Evaluator {
 
     fn eval_if_expression(
         &mut self,
-        condition: Expression,
-        consequence: BlockExpression,
-        alternative: Option<Expression>,
+        condition: &Expression,
+        consequence: &BlockExpression,
+        alternative: &Option<Expression>,
     ) -> Rc<Object> {
-        let evaluated_condition = self.eval_expression(condition);
+        let evaluated_condition = self.eval_expression(&condition);
         // Early return the first error received
         if evaluated_condition.is_error() {
             return evaluated_condition;
@@ -323,9 +325,9 @@ impl Evaluator {
         match *evaluated_condition {
             Object::Boolean(value) => {
                 if value {
-                    self.eval_block_expression(consequence)
+                    self.eval_block_expression(&consequence)
                 } else if let Some(alternative) = alternative {
-                    self.eval_expression(alternative)
+                    self.eval_expression(&alternative)
                 } else {
                     Rc::new(Object::Nil)
                 }
@@ -357,7 +359,7 @@ impl Evaluator {
 
                 self.env = Rc::new(RefCell::new(scoped_env));
 
-                let result = self.eval_block_expression(func.body);
+                let result = self.eval_block_expression(&func.body);
 
                 self.env = current_env;
 

@@ -1,4 +1,5 @@
 use std::fmt::Display;
+use std::rc::Rc;
 
 use crate::ast::{
     BlockExpression, CallExpression, Expression, FunctionLiteral, IdentifierLiteral, IfExpression,
@@ -281,6 +282,14 @@ impl<'a> Parser<'a> {
             self.next_token();
         }
 
+        // Expect a closing brace for the block (if we got EOF, this should result in a parse error)
+        if !self.current_token_is(Token::RightBrace) {
+            return Err(ParseError::Expected(
+                "closing brace".to_string(),
+                self.current_token.clone(),
+            ));
+        }
+
         Ok(BlockExpression { statements })
     }
 
@@ -301,7 +310,7 @@ impl<'a> Parser<'a> {
 
         return Ok(Expression::Function(Box::new(FunctionLiteral {
             parameters,
-            body,
+            body: Rc::new(body),
         })));
     }
 
@@ -533,7 +542,7 @@ impl<'a> Parser<'a> {
 mod tests {
     use crate::ast::{Expression, IdentifierLiteral, Program, Statement};
     use crate::lexer::Lexer;
-    use crate::parser::Parser;
+    use crate::parser::{ParseError, Parser};
     use crate::token::Token;
 
     #[test]
@@ -872,6 +881,49 @@ mod tests {
         for (input, expected) in tests {
             let prog = setup(input, 0).to_string();
             assert_eq!(expected, prog, "expected '{}' but got '{}'", expected, prog)
+        }
+    }
+
+    #[test]
+    fn block_expression() {
+        let input = "{ 5 }";
+        let prog = setup(input, 1);
+        let expr = unwrap_expression(&prog);
+
+        match expr {
+            Expression::Block(block) => {
+                assert_eq!(block.statements.len(), 1);
+                match block.statements.first().unwrap() {
+                    Statement::Expression { expression } => test_integer_literal(expression, 5),
+                    stmt => panic!("expected expression statement but got {:?}", stmt),
+                }
+            }
+            expr => panic!("expected block expression but got {:?}", expr),
+        }
+    }
+
+    #[test]
+    fn block_eof_handling() {
+        let input = "{ 5 ";
+        let l = Lexer::new(input);
+        let mut p = Parser::new(l);
+        let prog = p.parse_program();
+
+        match prog {
+            Err(errs) => {
+                assert_eq!(errs.len(), 1);
+                match errs.first().unwrap() {
+                    ParseError::Expected(expected, got) => {
+                        assert_eq!(expected, "closing brace");
+                        assert_eq!(*got, Token::Eof);
+                    }
+                    err => panic!(
+                        "expected \"expected closing brace\" parser error but got {:?}",
+                        err
+                    ),
+                }
+            }
+            Ok(prog) => panic!("expected invalid block to error but got {}", prog),
         }
     }
 

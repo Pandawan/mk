@@ -1,5 +1,5 @@
 use crate::token::Token;
-use std::fmt::Display;
+use std::{fmt::Display, rc::Rc};
 
 pub struct Program {
     pub statements: Vec<Statement>,
@@ -102,7 +102,7 @@ impl Display for Expression {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct IdentifierLiteral {
     pub name: String,
 }
@@ -199,7 +199,8 @@ impl Display for IfExpression {
 pub struct FunctionLiteral {
     /// Parameter identifiers
     pub parameters: Vec<IdentifierLiteral>,
-    pub body: BlockExpression,
+    // TODO: I really don't like having to use Rc for the AST; it should not have to worry about the needs of the interpreter
+    pub body: Rc<BlockExpression>,
 }
 
 impl Display for FunctionLiteral {

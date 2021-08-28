@@ -62,7 +62,7 @@ impl Display for Object {
 #[derive(Debug)]
 pub struct Function {
     pub parameters: Vec<IdentifierLiteral>,
-    pub body: BlockExpression,
+    pub body: Rc<BlockExpression>,
     pub env: Rc<RefCell<Environment>>,
 }
 
