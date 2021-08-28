@@ -1,6 +1,10 @@
-use std::{fmt::Display, rc::Rc};
+use std::{cell::RefCell, fmt::Display, rc::Rc};
 
-use crate::token::Token;
+use crate::{
+    ast::{BlockExpression, IdentifierLiteral},
+    environment::Environment,
+    token::Token,
+};
 
 #[derive(Debug, PartialEq)]
 pub enum Object {
@@ -8,6 +12,7 @@ pub enum Object {
     Float(f64),
     Boolean(bool),
     Nil,
+    Function(Function),
     /// Special object to encapsulate a return-ed value while it goes up scopes.
     /// This is never seen by the user.
     ReturnValue(Rc<Object>),
@@ -24,6 +29,7 @@ impl Object {
             Float(_) => "float".into(),
             Boolean(_) => "boolean".into(),
             Nil => "nil".into(),
+            Function(_) => "function".into(),
             ReturnValue(obj) => obj.typename(),
             Error(_) => "error".into(),
         }
@@ -46,9 +52,35 @@ impl Display for Object {
             Float(value) => write!(f, "{}", ryu::Buffer::new().format(*value)),
             Boolean(value) => write!(f, "{}", value),
             Nil => write!(f, "nil"),
+            Function(func) => write!(f, "{}", func),
             ReturnValue(obj) => write!(f, "{}", obj),
             Error(message) => write!(f, "Error: {}", message),
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct Function {
+    pub parameters: Vec<IdentifierLiteral>,
+    pub body: BlockExpression,
+    pub env: Rc<RefCell<Environment>>,
+}
+
+impl Display for Function {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let params: Vec<String> = (&self.parameters)
+            .into_iter()
+            .map(|p| p.to_string())
+            .collect();
+
+        write!(f, "fn ({}) {{\n{}\n}} ", params.join(", "), self.body)
+    }
+}
+
+impl PartialEq for Function {
+    fn eq(&self, _: &Function) -> bool {
+        // This should never be used?
+        panic!("PartialEq is not implemented for `function`");
     }
 }
 
@@ -62,6 +94,10 @@ pub enum RuntimeError {
     ExpectedBooleanCondition(Rc<Object>),
     /// When referencing an identifier that does not exist/has not been defined
     IdentifierNotFound(String),
+    /// When an object that is not a function is used with function call syntax
+    NotAFunction(Rc<Object>),
+    ///
+    BadArity { expected: usize, got: usize },
 }
 
 impl Display for RuntimeError {
@@ -93,6 +129,10 @@ impl Display for RuntimeError {
                 expression
             ),
             IdentifierNotFound(name) => write!(f, "identifier '{}' not found", name),
+            NotAFunction(obj) => write!(f, "{} is not a function", obj),
+            BadArity { expected, got } => {
+                write!(f, "Expected {} arguments but got {}.", expected, got)
+            }
         }
     }
 }

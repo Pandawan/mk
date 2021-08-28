@@ -1,9 +1,9 @@
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{
-    ast::{BlockExpression, Expression, IdentifierLiteral, Program, Statement},
+    ast::{BlockExpression, CallExpression, Expression, IdentifierLiteral, Program, Statement},
     environment::Environment,
-    object::{Object, RuntimeError},
+    object::{Function, Object, RuntimeError},
     token::Token,
 };
 
@@ -120,8 +120,43 @@ impl Evaluator {
                 self.eval_if_expression(if_expr.condition, if_expr.consequence, if_expr.alternative)
             }
 
+            Expression::Function(func) => {
+                let parameters = func.parameters;
+                let body = func.body;
+                Rc::new(Object::Function(Function {
+                    parameters,
+                    body,
+                    env: Rc::clone(&self.env),
+                }))
+            }
+            Expression::Call(call) => {
+                let func = self.eval_expression(call.function);
+                // Early return the first error received
+                if func.is_error() {
+                    return func;
+                }
+                let args = self.eval_expressions(call.arguments);
+                if args.len() == 1 && args.first().unwrap().is_error() {
+                    return Rc::clone(args.first().unwrap());
+                }
+
+                self.apply_function(func, args)
+            }
+
             _ => todo!("Implement other expressions {}", expr),
         }
+    }
+
+    fn eval_expressions(&mut self, exprs: Vec<Expression>) -> Vec<Rc<Object>> {
+        let mut result = Vec::new();
+        for expr in exprs {
+            let evaluated = self.eval_expression(expr);
+            if evaluated.is_error() {
+                return vec![evaluated];
+            }
+            result.push(evaluated);
+        }
+        result
     }
 
     fn eval_identifier_expression(&self, identifier: IdentifierLiteral) -> Rc<Object> {
@@ -298,6 +333,37 @@ impl Evaluator {
             _ => Rc::new(Object::Error(RuntimeError::ExpectedBooleanCondition(
                 evaluated_condition,
             ))),
+        }
+    }
+
+    fn apply_function(&mut self, func: Rc<Object>, args: Vec<Rc<Object>>) -> Rc<Object> {
+        match func.as_ref() {
+            Object::Function(func) => {
+                // TODO: Check that number of args & params matches
+
+                if args.len() != func.parameters.len() {
+                    return Rc::new(Object::Error(RuntimeError::BadArity {
+                        expected: func.parameters.len(),
+                        got: args.len(),
+                    }));
+                }
+
+                let current_env = Rc::clone(&self.env);
+                let mut scoped_env = Environment::new_enclosed(Rc::clone(&self.env));
+
+                for (ident, obj) in func.parameters.iter().zip(args.iter()) {
+                    scoped_env.set(ident.name.clone(), Rc::clone(obj));
+                }
+
+                self.env = Rc::new(RefCell::new(scoped_env));
+
+                let result = self.eval_block_expression(func.body);
+
+                self.env = current_env;
+
+                return result;
+            }
+            _ => Rc::new(Object::Error(RuntimeError::NotAFunction(func))),
         }
     }
 }
@@ -490,6 +556,58 @@ mod tests {
     }
 
     #[test]
+    fn eval_function_expression() {
+        let input = "fn (x) { x + 2; }";
+        let evaluated = evaluate(input);
+
+        match evaluated.as_ref() {
+            Object::Function(func) => {
+                if func.parameters.len() != 1 {
+                    panic!(
+                        "expected function object with 1 parameter but got {} ({})",
+                        func.parameters.len(),
+                        (&func.parameters)
+                            .into_iter()
+                            .map(|p| p.to_string())
+                            .collect::<Vec<String>>()
+                            .join(", ")
+                    )
+                }
+
+                let param = func.parameters.first().unwrap();
+                if param.name != "x" {
+                    panic!("expected function parameter to be x but got {}", param.name)
+                }
+
+                if func.body.to_string() != "(x + 2)" {
+                    panic!(
+                        "expected function body to be (x + 2) but got {}",
+                        func.body.to_string()
+                    )
+                }
+            }
+            obj => panic!("expected function object but got {}", obj),
+        }
+    }
+
+    #[test]
+    fn eval_call_expression() {
+        let tests = vec![
+            ("let identity = fn(x) { x; }; identity(5);", 5),
+            ("let identity = fn(x) { return x; }; identity(5);", 5),
+            ("let double = fn(x) { x * 2; }; double(5);", 10),
+            ("let add = fn(x, y) { x + y; }; add(5, 5);", 10),
+            ("let add = fn(x, y) { x + y; }; add(5 + 5, add(5, 5));", 20),
+            ("fn(x) { x; }(5)", 5),
+        ];
+
+        for (input, expected_value) in tests {
+            let evaluated = evaluate(input);
+            test_integer_object(evaluated, expected_value);
+        }
+    }
+
+    #[test]
     fn error_handling() {
         let tests = vec![
             (
@@ -626,8 +744,9 @@ mod tests {
     }
 
     fn test_null_object(obj: Rc<Object>) {
-        if *obj != Object::Nil {
-            panic!("expected null object but got {:?}", obj)
+        match *obj {
+            Object::Nil => {}
+            _ => panic!("expected null object but got {:?}", obj),
         }
     }
 
