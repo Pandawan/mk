@@ -76,6 +76,11 @@ impl Evaluator {
                 if obj.is_error() {
                     return obj;
                 }
+
+                // TODO: Make sure that variables stay within their scopes
+                // e.g. `{ let hello = 5; { let hello = 10; } hello }`
+                // This would require changing the BlockExpression to create a new environment
+
                 // Add the variable to the surrounding environment
                 self.env.borrow_mut().set(name.to_owned(), obj);
 
