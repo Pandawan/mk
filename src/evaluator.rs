@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{
-    ast::{BlockExpression, CallExpression, Expression, IdentifierLiteral, Program, Statement},
+    ast::{BlockExpression, Expression, IdentifierLiteral, Program, Statement},
     environment::Environment,
     object::{Function, Object, RuntimeError},
     token::Token,
@@ -35,7 +35,7 @@ impl Evaluator {
             }
         }
 
-        return result;
+        result
     }
 
     // Similar to eval (for programs) but doesn't unwrap return values
@@ -54,7 +54,7 @@ impl Evaluator {
             }
         }
 
-        return result;
+        result
     }
 
     fn eval_statement(&mut self, stmt: &Statement) -> Rc<Object> {
@@ -122,7 +122,7 @@ impl Evaluator {
             }
 
             // TODO: Perhaps Block expressions should have their own scope? What about if/for/while/etc.
-            Expression::Block(block) => self.eval_block_expression(&block),
+            Expression::Block(block) => self.eval_block_expression(block),
 
             Expression::If(if_expr) => self.eval_if_expression(
                 &if_expr.condition,
@@ -322,7 +322,7 @@ impl Evaluator {
         consequence: &BlockExpression,
         alternative: &Option<Expression>,
     ) -> Rc<Object> {
-        let evaluated_condition = self.eval_expression(&condition);
+        let evaluated_condition = self.eval_expression(condition);
         // Early return the first error received
         if evaluated_condition.is_error() {
             return evaluated_condition;
@@ -331,9 +331,9 @@ impl Evaluator {
         match *evaluated_condition {
             Object::Boolean(value) => {
                 if value {
-                    self.eval_block_expression(&consequence)
+                    self.eval_block_expression(consequence)
                 } else if let Some(alternative) = alternative {
-                    self.eval_expression(&alternative)
+                    self.eval_expression(alternative)
                 } else {
                     Rc::new(Object::Nil)
                 }
@@ -369,7 +369,7 @@ impl Evaluator {
 
                 self.env = current_env;
 
-                return result;
+                result
             }
             _ => Rc::new(Object::Error(RuntimeError::NotAFunction(func))),
         }

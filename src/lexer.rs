@@ -95,7 +95,7 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        return Ok(Token::String(str));
+        Ok(Token::String(str))
     }
 
     /// Read the current and following characters as a number token.

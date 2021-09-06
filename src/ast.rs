@@ -16,7 +16,7 @@ impl Program {
 impl Display for Program {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = (&self.statements)
-            .into_iter()
+            .iter()
             .map(|stmt| stmt.to_string())
             .collect::<Vec<String>>()
             .join("; ");
@@ -115,15 +115,15 @@ impl Display for IdentifierLiteral {
 
 impl From<&str> for IdentifierLiteral {
     fn from(name: &str) -> Self {
-        return Self {
+        Self {
             name: name.to_owned(),
-        };
+        }
     }
 }
 
 impl From<String> for IdentifierLiteral {
     fn from(name: String) -> Self {
-        return Self { name };
+        Self { name }
     }
 }
 

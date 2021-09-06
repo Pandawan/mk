@@ -43,7 +43,7 @@ impl Display for ParseError {
 
 impl LexError {
     fn to_parse_error(self) -> ParseError {
-        return ParseError::SyntaxError(self);
+        ParseError::SyntaxError(self)
     }
 }
 
@@ -129,11 +129,11 @@ impl<'a> Parser<'a> {
                 .map_err(|err| vec![err])?;
         }
 
-        if errors.len() != 0 {
+        if errors.is_empty() == false {
             return Err(errors);
         }
 
-        return Ok(program);
+        Ok(program)
     }
 
     fn parse_statement(&mut self) -> ParseResult<Statement> {
@@ -336,10 +336,10 @@ impl<'a> Parser<'a> {
 
         let body = parser.parse_block_expression_as_block()?;
 
-        return Ok(Expression::Function(Box::new(FunctionLiteral {
+        Ok(Expression::Function(Box::new(FunctionLiteral {
             parameters,
             body: Rc::new(body),
-        })));
+        })))
     }
 
     fn parse_function_parameters(&mut self) -> ParseResult<Vec<IdentifierLiteral>> {
@@ -369,7 +369,7 @@ impl<'a> Parser<'a> {
 
         self.expect_peek(Token::RightParen)?;
 
-        return Ok(identifiers);
+        Ok(identifiers)
     }
 
     fn parse_identifier_as_literal(&mut self) -> ParseResult<IdentifierLiteral> {
@@ -385,7 +385,7 @@ impl<'a> Parser<'a> {
 
     fn parse_identifier_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
         let identifier_literal = parser.parse_identifier_as_literal()?;
-        return Ok(Expression::Identifier(identifier_literal));
+        Ok(Expression::Identifier(identifier_literal))
     }
 
     fn parse_integer_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
@@ -441,7 +441,7 @@ impl<'a> Parser<'a> {
         // Expect a right (closing) parenthesis
         parser.expect_peek(Token::RightParen)?;
 
-        return exp;
+        exp
     }
 
     fn parse_prefix_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
@@ -513,7 +513,10 @@ impl<'a> Parser<'a> {
         self.current_token = self.peek_token.clone();
         // TODO: Better lexing error handling when consuming in parser (ParserError::LexerError(err))
         match self.lexer.next_token() {
-            Ok(tok) => Ok(self.peek_token = tok),
+            Ok(tok) => {
+                self.peek_token = tok;
+                Ok(())
+            }
             Err(err) => Err(err.to_parse_error()),
         }
     }
