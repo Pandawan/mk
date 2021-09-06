@@ -311,7 +311,7 @@ mod tests {
 
     #[test]
     fn test_string() {
-        let input = "\"foobar\" \"foo bar\" \"not closed";
+        let input = "\"foobar\" \'foo bar\' \"not closed";
         let mut lex = Lexer::new(input);
         assert_eq!(
             lex.next_token().unwrap(),

@@ -4,6 +4,7 @@ use crate::object::Object;
 
 #[derive(Debug, Clone)]
 pub struct Environment {
+    // TODO: Add some way to identify environments (e.g. global, comes from a specific fn, etc.) for debugging & tracing
     store: HashMap<String, Rc<Object>>,
     outer: Option<Rc<RefCell<Environment>>>,
 }
@@ -37,5 +38,34 @@ impl Environment {
 
     pub fn set(&mut self, name: String, value: Rc<Object>) {
         self.store.insert(name, value);
+    }
+
+    pub fn depth(&self) -> usize {
+        match &self.outer {
+            // Recursively add the depth
+            Some(parent_env) => 1 + parent_env.borrow().depth(),
+            None => 1,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{cell::RefCell, rc::Rc};
+
+    use crate::environment::Environment;
+
+    #[test]
+    pub fn test_depth() {
+        let env1 = Rc::new(RefCell::new(Environment::new()));
+        assert_eq!(env1.borrow().depth(), 1);
+
+        let env2 = Rc::new(RefCell::new(Environment::new_enclosed(Rc::clone(&env1))));
+        assert_eq!(env1.borrow().depth(), 1);
+        assert_eq!(env2.borrow().depth(), 2);
+
+        let env3 = Rc::new(RefCell::new(Environment::new_enclosed(Rc::clone(&env2))));
+        assert_eq!(env2.borrow().depth(), 2);
+        assert_eq!(env3.borrow().depth(), 3);
     }
 }

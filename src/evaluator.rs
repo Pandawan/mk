@@ -234,6 +234,10 @@ impl Evaluator {
                 self.eval_boolean_infix_expression(operator, *left_value, *right_value)
             }
 
+            (Object::String(left_value), Object::String(right_value)) => {
+                self.eval_string_infix_expression(operator, left_value, right_value)
+            }
+
             (_, _) => Rc::new(Object::Error(RuntimeError::InvalidInfixOperandType(
                 operator.clone(),
                 left,
@@ -318,6 +322,26 @@ impl Evaluator {
         }
     }
 
+    fn eval_string_infix_expression(
+        &self,
+        operator: &Token,
+        left_value: &String,
+        right_value: &String,
+    ) -> Rc<Object> {
+        match operator {
+            Token::Plus => Rc::new(Object::String(left_value.to_owned() + right_value)),
+            Token::EqualEqual => Rc::new(Object::Boolean(left_value == right_value)),
+            Token::BangEqual => Rc::new(Object::Boolean(left_value != right_value)),
+
+            operator => Rc::new(Object::Error(RuntimeError::InvalidInfixOperandType(
+                operator.clone(),
+                // TODO: Find a way to keep using the previous Object::String rather than creating a new one
+                Rc::new(Object::String(left_value.clone())),
+                Rc::new(Object::String(right_value.clone())),
+            ))),
+        }
+    }
+
     fn eval_if_expression(
         &mut self,
         condition: &Expression,
@@ -359,7 +383,7 @@ impl Evaluator {
                 }
 
                 let current_env = Rc::clone(&self.env);
-                let mut scoped_env = Environment::new_enclosed(Rc::clone(&self.env));
+                let mut scoped_env = Environment::new_enclosed(Rc::clone(&func.env));
 
                 for (ident, obj) in func.parameters.iter().zip(args.iter()) {
                     scoped_env.set(ident.name.clone(), Rc::clone(obj));
@@ -470,6 +494,9 @@ mod tests {
             ("true == false", false),
             ("true != false", true),
             ("false != true", true),
+            ("\"hello\" == \'hello\'", true),
+            ("\"hello\" == \'world\'", false),
+            ("\"hello\" != \"world\"", true),
             ("(1 < 2) == true", true),
             ("(1 < 2) == false", false),
             ("(1 > 2) == true", false),
@@ -489,9 +516,15 @@ mod tests {
 
     #[test]
     fn eval_string_expression() {
-        let input = "\"hello world\"";
-        let evaluated = evaluate(input);
-        test_string_object(evaluated, "hello world");
+        let tests = vec![
+            ("\"hello world\"", "hello world"),
+            ("\"hello\" + \" \" + \"world\"", "hello world"),
+        ];
+
+        for (input, expected_value) in tests {
+            let evaluated = evaluate(input);
+            test_string_object(evaluated, expected_value);
+        }
     }
 
     #[test]
@@ -616,6 +649,14 @@ mod tests {
             ("let add = fn(x, y) { x + y; }; add(5, 5);", 10),
             ("let add = fn(x, y) { x + y; }; add(5 + 5, add(5, 5));", 20),
             ("fn(x) { x; }(5)", 5),
+            (
+                "
+                let adder = fn(x) { fn(y) { x + y } }; 
+                let fiveAdder = adder(5);
+                fiveAdder(3);
+                ",
+                8,
+            ),
         ];
 
         for (input, expected_value) in tests {
@@ -656,6 +697,14 @@ mod tests {
                     Token::Plus,
                     Rc::new(Object::Boolean(true)),
                     Rc::new(Object::Boolean(false)),
+                ),
+            ),
+            (
+                "\"hello\" - \"world\";",
+                RuntimeError::InvalidInfixOperandType(
+                    Token::Minus,
+                    Rc::new(Object::String("hello".to_string())),
+                    Rc::new(Object::String("world".to_string())),
                 ),
             ),
             (
