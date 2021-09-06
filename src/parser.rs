@@ -5,6 +5,7 @@ use crate::ast::{
     BlockExpression, CallExpression, Expression, FunctionLiteral, IdentifierLiteral, IfExpression,
     InfixExpression, PrefixExpression, Program, Statement,
 };
+use crate::lexer::LexError;
 use crate::{lexer::Lexer, token::Token};
 
 #[derive(Debug)]
@@ -14,6 +15,9 @@ pub enum ParseError {
     Expected(String, Token),
 
     InvalidPrefixFn(Token),
+
+    // Wrapper for LexErrors to bubble up
+    SyntaxError(LexError),
 }
 
 impl Display for ParseError {
@@ -30,7 +34,16 @@ impl Display for ParseError {
             ParseError::InvalidPrefixFn(token) => {
                 write!(f, "No prefix parsing function found for token {}", token)
             }
+            ParseError::SyntaxError(err) => {
+                write!(f, "Syntax Error: {}", err)
+            }
         }
+    }
+}
+
+impl LexError {
+    fn to_parse_error(self) -> ParseError {
+        return ParseError::SyntaxError(self);
     }
 }
 
@@ -78,14 +91,12 @@ pub struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(mut lexer: Lexer<'a>) -> Parser<'a> {
-        let cur = lexer.next_token();
-        let next = lexer.next_token();
+    pub fn new(lexer: Lexer<'a>) -> Parser<'a> {
         Parser {
             lexer,
             // TODO: Better lexing error handling when consuming in parser
-            current_token: cur.unwrap(),
-            peek_token: next.unwrap(),
+            current_token: Token::Eof,
+            peek_token: Token::Eof,
         }
     }
 
@@ -94,12 +105,28 @@ impl<'a> Parser<'a> {
         let mut program = Program::new();
         let mut errors: Vec<ParseError> = Vec::new();
 
+        // Prepare parser by fetching first two tokens
+        match self.lexer.next_token() {
+            Ok(tok) => self.current_token = tok,
+            Err(err) => return Err(vec![ParseError::SyntaxError(err)]),
+        };
+        match self.lexer.next_token() {
+            Ok(tok) => self.peek_token = tok,
+            Err(err) => return Err(vec![ParseError::SyntaxError(err)]),
+        };
+
         while self.current_token != Token::Eof {
             match self.parse_statement() {
                 Ok(statement) => program.statements.push(statement),
+                // Encountering a SyntaxError should exit out immediately
+                Err(ParseError::SyntaxError(err)) => return Err(vec![err.to_parse_error()]),
                 Err(error) => errors.push(error),
             }
-            self.next_token();
+
+            // Consume the next token
+            self.next_token()
+                // exit out if there was a LexError
+                .map_err(|err| vec![err])?;
         }
 
         if errors.len() != 0 {
@@ -123,14 +150,14 @@ impl<'a> Parser<'a> {
         self.expect_peek(Token::Equal)?;
 
         // Consume equal sign
-        self.next_token();
+        self.next_token()?;
 
         let value = self.parse_expression(Precedence::Lowest)?;
 
         // Consume the semicolon at the end of the statement
         // TODO: Optional semicolon?
         if self.peek_token_is(&Token::Semicolon) {
-            self.next_token();
+            self.next_token()?;
         }
 
         Ok(Statement::Let { name, value })
@@ -138,14 +165,14 @@ impl<'a> Parser<'a> {
 
     fn parse_return_statement(&mut self) -> ParseResult<Statement> {
         // Consume the `return` token
-        self.next_token();
+        self.next_token()?;
 
         let value = self.parse_expression(Precedence::Lowest)?;
 
         // Consume the semicolon at the end of the statement
         // TODO: Optional semicolon?
         if self.peek_token_is(&Token::Semicolon) {
-            self.next_token();
+            self.next_token()?;
         }
 
         Ok(Statement::Return { value })
@@ -157,7 +184,7 @@ impl<'a> Parser<'a> {
         // Consume the semicolon at the end of the statement
         // TODO: Optional semicolon?
         if self.peek_token_is(&Token::Semicolon) {
-            self.next_token();
+            self.next_token()?;
         }
 
         Ok(Statement::Expression { expression: expr })
@@ -180,7 +207,7 @@ impl<'a> Parser<'a> {
             // Check if the peek token is an operator (and has an infix function)
             if let Some(infix_fn) = self.get_infix_fn(&self.peek_token) {
                 // Move the infix operator to be current_token
-                self.next_token();
+                self.next_token()?;
                 // Parse the infix expression
                 left_expr = infix_fn(self, left_expr)?;
             }
@@ -230,7 +257,7 @@ impl<'a> Parser<'a> {
 
     fn parse_if_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
         // Advance past the `if` token (was already current_token, consume it out)
-        parser.next_token();
+        parser.next_token()?;
 
         // Parse the condition (note: parentheses are not required)
         let condition = parser.parse_expression(Precedence::Lowest)?;
@@ -242,12 +269,12 @@ impl<'a> Parser<'a> {
 
         let alternative = if parser.peek_token_is(&Token::Else) {
             // Consume the `else` token (was peek_token, advance into current_token)
-            parser.next_token();
+            parser.next_token()?;
 
             // Allow `else if` by branching separately based on Token::LeftBrace vs Token::If
             if parser.peek_token_is(&Token::If) {
                 // Consume `if` token (was peek_token, advance into current_token)
-                parser.next_token();
+                parser.next_token()?;
                 let else_if_expr = Parser::parse_if_expression(parser)?;
 
                 Some(else_if_expr)
@@ -274,13 +301,13 @@ impl<'a> Parser<'a> {
         let mut statements = Vec::new();
 
         // Consume the left brace
-        self.next_token();
+        self.next_token()?;
 
         while !self.current_token_is(Token::RightBrace) && !self.current_token_is(Token::Eof) {
             // TODO: Is throwing on Err the right approach?
             let stmt = self.parse_statement()?;
             statements.push(stmt);
-            self.next_token();
+            self.next_token()?;
         }
 
         // Expect a closing brace for the block (if we got EOF, this should result in a parse error)
@@ -321,21 +348,21 @@ impl<'a> Parser<'a> {
         // No parameters, parentheses close immediately
         if self.peek_token_is(&Token::RightParen) {
             // Consume the left parenthesis
-            self.next_token();
+            self.next_token()?;
             return Ok(identifiers);
         }
 
         // Consume the left parenthesis
-        self.next_token();
+        self.next_token()?;
 
         // Push the first parameter identifier
         identifiers.push(self.parse_identifier_as_literal()?);
 
         while self.peek_token_is(&Token::Comma) {
             // Consume previous identifier
-            self.next_token();
+            self.next_token()?;
             // Consume comma
-            self.next_token();
+            self.next_token()?;
             // Push the next parameter identifier
             identifiers.push(self.parse_identifier_as_literal()?);
         }
@@ -406,7 +433,7 @@ impl<'a> Parser<'a> {
 
     fn parse_grouped_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
         // Consume left parenthesis
-        parser.next_token();
+        parser.next_token()?;
 
         // Parse the inside expression
         let exp = parser.parse_expression(Precedence::Lowest);
@@ -420,7 +447,7 @@ impl<'a> Parser<'a> {
     fn parse_prefix_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
         let operator = parser.current_token.clone();
         // Consume the operator token
-        parser.next_token();
+        parser.next_token()?;
         let right = parser.parse_expression(Precedence::Prefix)?;
         Ok(Expression::Prefix(Box::new(PrefixExpression {
             operator,
@@ -442,20 +469,20 @@ impl<'a> Parser<'a> {
         // No parameters, parentheses close immediately
         if self.peek_token_is(&Token::RightParen) {
             // Consume the left parenthesis
-            self.next_token();
+            self.next_token()?;
             return Ok(arguments);
         }
 
         // Consume the left parenthesis
-        self.next_token();
+        self.next_token()?;
         // Push the first parameter identifier
         arguments.push(self.parse_expression(Precedence::Lowest)?);
 
         while self.peek_token_is(&Token::Comma) {
             // Consume previous identifier
-            self.next_token();
+            self.next_token()?;
             // Consume comma
-            self.next_token();
+            self.next_token()?;
             // Push the next parameter identifier
             arguments.push(self.parse_expression(Precedence::Lowest)?);
         }
@@ -471,7 +498,7 @@ impl<'a> Parser<'a> {
     ) -> ParseResult<Expression> {
         let operator = parser.current_token.clone();
         let precedence = parser.current_precedence();
-        parser.next_token();
+        parser.next_token()?;
 
         let right = parser.parse_expression(precedence)?;
 
@@ -482,10 +509,13 @@ impl<'a> Parser<'a> {
         })))
     }
 
-    fn next_token(&mut self) {
+    fn next_token(&mut self) -> Result<(), ParseError> {
         self.current_token = self.peek_token.clone();
         // TODO: Better lexing error handling when consuming in parser (ParserError::LexerError(err))
-        self.peek_token = self.lexer.next_token().unwrap();
+        match self.lexer.next_token() {
+            Ok(tok) => Ok(self.peek_token = tok),
+            Err(err) => Err(err.to_parse_error()),
+        }
     }
 
     fn current_token_is(&self, token: Token) -> bool {
@@ -514,7 +544,7 @@ impl<'a> Parser<'a> {
 
     fn expect_peek(&mut self, token: Token) -> ParseResult<()> {
         if self.peek_token_is(&token) {
-            self.next_token();
+            self.next_token()?;
             Ok(())
         } else {
             Err(ParseError::Expected(
@@ -535,7 +565,7 @@ impl<'a> Parser<'a> {
             }
         };
 
-        self.next_token();
+        self.next_token()?;
         Ok(name)
     }
 }
