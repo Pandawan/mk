@@ -1,7 +1,34 @@
+use std::fmt::Display;
 use std::iter::Peekable;
+use std::num::{ParseFloatError, ParseIntError};
 use std::str::Chars;
 
 use crate::token::Token;
+
+#[derive(Debug)]
+pub enum LexError {
+    StringNotClosed(char),
+    InvalidEscape(char),
+    InvalidFloat(ParseFloatError),
+    InvalidInt(ParseIntError),
+}
+
+impl Display for LexError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LexError::StringNotClosed(c) => write!(
+                f,
+                "Expected closing {} of string literal but reached EOF",
+                c
+            ),
+            LexError::InvalidEscape(c) => write!(f, "Invalid escape sequence \\{}", c),
+            LexError::InvalidFloat(err) => write!(f, "Invalid float: {}", err),
+            LexError::InvalidInt(err) => write!(f, "Invalid int: {}", err),
+        }
+    }
+}
+
+type LexResult<T> = Result<T, LexError>;
 
 pub struct Lexer<'a> {
     input_iter: Peekable<Chars<'a>>,
@@ -36,9 +63,44 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// Read the next characters as a string
+    fn read_string(&mut self, opening: char) -> LexResult<Token> {
+        let mut str = String::new();
+
+        loop {
+            let ch = self.read_char();
+
+            match ch {
+                // Closing string character matches that of opening
+                Some(ch) if ch == opening => break,
+                Some('\\') => match self.read_char() {
+                    Some('\'') => str.push('\''),
+                    Some('\"') => str.push('\"'),
+                    Some('\\') => str.push('\\'),
+                    Some('n') => str.push('\n'),
+                    Some('r') => str.push('\r'),
+                    Some('t') => str.push('\t'),
+                    Some('0') => str.push('\0'),
+                    // TODO: Allow Hex escape sequences in format \xFF
+
+                    // TODO: I don't like repeating code like this
+                    Some(ch) if ch == opening => break,
+                    Some(ch) => return Err(LexError::InvalidEscape(ch)),
+                    None => return Err(LexError::StringNotClosed(opening)),
+                },
+
+                // Any other character goes into the string
+                Some(ch) => str.push(ch),
+                None => return Err(LexError::StringNotClosed(opening)),
+            }
+        }
+
+        return Ok(Token::String(str));
+    }
+
     /// Read the current and following characters as a number token.
     /// Source: https://michael-f-bryan.github.io/static-analyser-in-rust/book/lex.html
-    fn read_number(&mut self, first: char) -> Token {
+    fn read_number(&mut self, first: char) -> LexResult<Token> {
         let mut seen_dot = false;
 
         let mut s = String::new();
@@ -62,16 +124,21 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        // TODO: Error handling (e.g. number too long, etc.)
         if seen_dot {
-            Token::Float(s.parse().unwrap())
+            match s.parse() {
+                Ok(value) => Ok(Token::Float(value)),
+                Err(error) => Err(LexError::InvalidFloat(error)),
+            }
         } else {
-            Token::Integer(s.parse().unwrap())
+            match s.parse() {
+                Ok(value) => Ok(Token::Integer(value)),
+                Err(error) => Err(LexError::InvalidInt(error)),
+            }
         }
     }
 
     /// Read the current and following tokens as an identifier or a keyword (if it exists).
-    fn read_identifier_or_keyword(&mut self, first: char) -> Token {
+    fn read_identifier_or_keyword(&mut self, first: char) -> LexResult<Token> {
         let mut identifier = String::new();
         identifier.push(first);
 
@@ -86,69 +153,71 @@ impl<'a> Lexer<'a> {
         }
 
         if let Some(keyword_token) = Token::lookup_keyword(&identifier) {
-            keyword_token
+            Ok(keyword_token)
         } else {
-            Token::Identifier(identifier)
+            Ok(Token::Identifier(identifier))
         }
     }
 
     /// Read a new token from the characters list.
-    pub fn next_token(&mut self) -> Token {
+    pub fn next_token(&mut self) -> LexResult<Token> {
         self.skip_whitespace();
 
         if let Some(c) = self.read_char() {
             match c {
-                '+' => Token::Plus,
-                '-' => Token::Minus,
+                '+' => Ok(Token::Plus),
+                '-' => Ok(Token::Minus),
                 '*' => match self.peek_char() {
                     // Double star
                     Some('*') => {
                         self.read_char();
-                        Token::StarStar
+                        Ok(Token::StarStar)
                     }
-                    _ => Token::Star,
+                    _ => Ok(Token::Star),
                 },
-                '/' => Token::Slash,
+                '/' => Ok(Token::Slash),
 
                 '=' => match self.peek_char() {
                     // Double equal
                     Some('=') => {
                         self.read_char();
-                        Token::EqualEqual
+                        Ok(Token::EqualEqual)
                     }
-                    _ => Token::Equal,
+                    _ => Ok(Token::Equal),
                 },
                 '!' => match self.peek_char() {
                     // Double equal
                     Some('=') => {
                         self.read_char();
-                        Token::BangEqual
+                        Ok(Token::BangEqual)
                     }
-                    _ => Token::Bang,
+                    _ => Ok(Token::Bang),
                 },
                 '<' => match self.peek_char() {
                     // Double equal
                     Some('=') => {
                         self.read_char();
-                        Token::LessEqual
+                        Ok(Token::LessEqual)
                     }
-                    _ => Token::LessThan,
+                    _ => Ok(Token::LessThan),
                 },
                 '>' => match self.peek_char() {
                     // Double equal
                     Some('=') => {
                         self.read_char();
-                        Token::GreaterEqual
+                        Ok(Token::GreaterEqual)
                     }
-                    _ => Token::GreaterThan,
+                    _ => Ok(Token::GreaterThan),
                 },
 
-                ',' => Token::Comma,
-                ';' => Token::Semicolon,
-                '(' => Token::LeftParen,
-                ')' => Token::RightParen,
-                '{' => Token::LeftBrace,
-                '}' => Token::RightBrace,
+                ',' => Ok(Token::Comma),
+                ';' => Ok(Token::Semicolon),
+                '(' => Ok(Token::LeftParen),
+                ')' => Ok(Token::RightParen),
+                '{' => Ok(Token::LeftBrace),
+                '}' => Ok(Token::RightBrace),
+
+                '"' | '\'' => self.read_string(c),
 
                 c if is_digit(c) => self.read_number(c),
                 c if is_identifier_char(c) => self.read_identifier_or_keyword(c),
@@ -156,7 +225,7 @@ impl<'a> Lexer<'a> {
                 _ => panic!("Unknown symbol {}", c), // TODO: Token::Illegal(c)? Some kind of error reporting
             }
         } else {
-            Token::Eof
+            Ok(Token::Eof)
         }
     }
 }
@@ -171,7 +240,7 @@ fn is_identifier_char(c: char) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::lexer::Lexer;
+    use crate::lexer::{LexError, Lexer};
     use crate::token::Token;
 
     #[test]
@@ -179,20 +248,20 @@ mod tests {
         let input = "+-*/=! **==!=<><=>=";
         let mut lex = Lexer::new(input);
 
-        assert_eq!(lex.next_token(), Token::Plus);
-        assert_eq!(lex.next_token(), Token::Minus);
-        assert_eq!(lex.next_token(), Token::Star);
-        assert_eq!(lex.next_token(), Token::Slash);
-        assert_eq!(lex.next_token(), Token::Equal);
-        assert_eq!(lex.next_token(), Token::Bang);
-        assert_eq!(lex.next_token(), Token::StarStar);
+        assert_eq!(lex.next_token().unwrap(), Token::Plus);
+        assert_eq!(lex.next_token().unwrap(), Token::Minus);
+        assert_eq!(lex.next_token().unwrap(), Token::Star);
+        assert_eq!(lex.next_token().unwrap(), Token::Slash);
+        assert_eq!(lex.next_token().unwrap(), Token::Equal);
+        assert_eq!(lex.next_token().unwrap(), Token::Bang);
+        assert_eq!(lex.next_token().unwrap(), Token::StarStar);
 
-        assert_eq!(lex.next_token(), Token::EqualEqual);
-        assert_eq!(lex.next_token(), Token::BangEqual);
-        assert_eq!(lex.next_token(), Token::LessThan);
-        assert_eq!(lex.next_token(), Token::GreaterThan);
-        assert_eq!(lex.next_token(), Token::LessEqual);
-        assert_eq!(lex.next_token(), Token::GreaterEqual);
+        assert_eq!(lex.next_token().unwrap(), Token::EqualEqual);
+        assert_eq!(lex.next_token().unwrap(), Token::BangEqual);
+        assert_eq!(lex.next_token().unwrap(), Token::LessThan);
+        assert_eq!(lex.next_token().unwrap(), Token::GreaterThan);
+        assert_eq!(lex.next_token().unwrap(), Token::LessEqual);
+        assert_eq!(lex.next_token().unwrap(), Token::GreaterEqual);
     }
 
     #[test]
@@ -200,22 +269,28 @@ mod tests {
         let input = ",;(){}";
         let mut lex = Lexer::new(input);
 
-        assert_eq!(lex.next_token(), Token::Comma);
-        assert_eq!(lex.next_token(), Token::Semicolon);
-        assert_eq!(lex.next_token(), Token::LeftParen);
-        assert_eq!(lex.next_token(), Token::RightParen);
-        assert_eq!(lex.next_token(), Token::LeftBrace);
-        assert_eq!(lex.next_token(), Token::RightBrace);
+        assert_eq!(lex.next_token().unwrap(), Token::Comma);
+        assert_eq!(lex.next_token().unwrap(), Token::Semicolon);
+        assert_eq!(lex.next_token().unwrap(), Token::LeftParen);
+        assert_eq!(lex.next_token().unwrap(), Token::RightParen);
+        assert_eq!(lex.next_token().unwrap(), Token::LeftBrace);
+        assert_eq!(lex.next_token().unwrap(), Token::RightBrace);
     }
 
     #[test]
     fn test_identifier() {
         let input = "hello _world _hello_world_";
         let mut lex = Lexer::new(input);
-        assert_eq!(lex.next_token(), Token::Identifier("hello".to_owned()));
-        assert_eq!(lex.next_token(), Token::Identifier("_world".to_owned()));
         assert_eq!(
-            lex.next_token(),
+            lex.next_token().unwrap(),
+            Token::Identifier("hello".to_owned())
+        );
+        assert_eq!(
+            lex.next_token().unwrap(),
+            Token::Identifier("_world".to_owned())
+        );
+        assert_eq!(
+            lex.next_token().unwrap(),
             Token::Identifier("_hello_world_".to_owned())
         );
     }
@@ -224,33 +299,55 @@ mod tests {
     fn test_integer() {
         let input = "012312";
         let mut lex = Lexer::new(input);
-        assert_eq!(lex.next_token(), Token::Integer(12312));
+        assert_eq!(lex.next_token().unwrap(), Token::Integer(12312));
     }
 
     #[test]
     fn test_float() {
         let input = "012312.321";
         let mut lex = Lexer::new(input);
-        assert_eq!(lex.next_token(), Token::Float(12312.321));
+        assert_eq!(lex.next_token().unwrap(), Token::Float(12312.321));
+    }
+
+    #[test]
+    fn test_string() {
+        let input = "\"foobar\" \"foo bar\" \"not closed";
+        let mut lex = Lexer::new(input);
+        assert_eq!(
+            lex.next_token().unwrap(),
+            Token::String("foobar".to_string())
+        );
+        assert_eq!(
+            lex.next_token().unwrap(),
+            Token::String("foo bar".to_string())
+        );
+
+        match lex.next_token() {
+            Err(LexError::StringNotClosed('"')) => {}
+            Err(LexError::StringNotClosed(c)) => {
+                panic!("expected string not closed error for \" but got for {}", c)
+            }
+            result => panic!("expected unclosed string error for \" but got {:?}", result),
+        }
     }
 
     #[test]
     fn test_keywords() {
         let input = "true false fn let if else return";
         let mut lex = Lexer::new(input);
-        assert_eq!(lex.next_token(), Token::True);
-        assert_eq!(lex.next_token(), Token::False);
-        assert_eq!(lex.next_token(), Token::Fn);
-        assert_eq!(lex.next_token(), Token::Let);
-        assert_eq!(lex.next_token(), Token::If);
-        assert_eq!(lex.next_token(), Token::Else);
-        assert_eq!(lex.next_token(), Token::Return);
+        assert_eq!(lex.next_token().unwrap(), Token::True);
+        assert_eq!(lex.next_token().unwrap(), Token::False);
+        assert_eq!(lex.next_token().unwrap(), Token::Fn);
+        assert_eq!(lex.next_token().unwrap(), Token::Let);
+        assert_eq!(lex.next_token().unwrap(), Token::If);
+        assert_eq!(lex.next_token().unwrap(), Token::Else);
+        assert_eq!(lex.next_token().unwrap(), Token::Return);
     }
 
     #[test]
     fn test_eof() {
         let input = "";
         let mut lex = Lexer::new(input);
-        assert_eq!(lex.next_token(), Token::Eof)
+        assert_eq!(lex.next_token().unwrap(), Token::Eof)
     }
 }

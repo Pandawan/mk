@@ -31,6 +31,7 @@ pub enum Token {
     Identifier(String),
     Integer(i64),
     Float(f64),
+    String(String),
 
     // Keywords
     True,
@@ -97,6 +98,7 @@ impl fmt::Display for Token {
             /* TODO: This may not always print the correct value.
             e.g. `1.0` will print `1` */
             Float(value) => write!(f, "{}", value),
+            String(value) => write!(f, "\"{}\"", value),
 
             True => write!(f, "true"),
             False => write!(f, "false"),

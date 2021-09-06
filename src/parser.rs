@@ -83,8 +83,9 @@ impl<'a> Parser<'a> {
         let next = lexer.next_token();
         Parser {
             lexer,
-            current_token: cur,
-            peek_token: next,
+            // TODO: Better lexing error handling when consuming in parser
+            current_token: cur.unwrap(),
+            peek_token: next.unwrap(),
         }
     }
 
@@ -483,7 +484,8 @@ impl<'a> Parser<'a> {
 
     fn next_token(&mut self) {
         self.current_token = self.peek_token.clone();
-        self.peek_token = self.lexer.next_token();
+        // TODO: Better lexing error handling when consuming in parser (ParserError::LexerError(err))
+        self.peek_token = self.lexer.next_token().unwrap();
     }
 
     fn current_token_is(&self, token: Token) -> bool {

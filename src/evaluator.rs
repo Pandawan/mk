@@ -121,6 +121,7 @@ impl Evaluator {
                 self.eval_infix_expression(&infix.operator, left, right)
             }
 
+            // TODO: Perhaps Block expressions should have their own scope? What about if/for/while/etc.
             Expression::Block(block) => self.eval_block_expression(&block),
 
             Expression::If(if_expr) => self.eval_if_expression(
