@@ -41,7 +41,7 @@ pub fn repl() {
                         let mut e = Evaluator::new_with_env(Rc::clone(&env));
                         let value = e.eval(prog);
 
-                        println!("{}", value);
+                        println!("{}", value.to_code_string());
                     }
                     Err(errors) => {
                         println!("Parser errors:");

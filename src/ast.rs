@@ -70,6 +70,7 @@ pub enum Expression {
     Integer(i64),
     Float(f64),
     Boolean(bool),
+    String(String),
     Nil,
 
     // Complex
@@ -90,6 +91,7 @@ impl Display for Expression {
             Integer(value) => write!(f, "{}", value),
             Float(value) => write!(f, "{}", value),
             Boolean(value) => write!(f, "{}", value),
+            String(value) => write!(f, "\"{}\"", value),
             Nil => write!(f, "nil"),
 
             Prefix(prefix) => write!(f, "{}", prefix),

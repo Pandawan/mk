@@ -94,6 +94,8 @@ impl Evaluator {
             Expression::Integer(value) => Rc::new(Object::Integer(*value)),
             Expression::Float(value) => Rc::new(Object::Float(*value)),
             Expression::Boolean(value) => Rc::new(Object::Boolean(*value)),
+            // TODO: Should I really be cloning the String each time? (I also do this from lexer -> parser)
+            Expression::String(value) => Rc::new(Object::String(value.clone())),
             Expression::Nil => Rc::new(Object::Nil),
             Expression::Identifier(identifier) => {
                 self.eval_identifier_expression(identifier.clone())
@@ -486,6 +488,13 @@ mod tests {
     }
 
     #[test]
+    fn eval_string_expression() {
+        let input = "\"hello world\"";
+        let evaluated = evaluate(input);
+        test_string_object(evaluated, "hello world");
+    }
+
+    #[test]
     fn eval_bang_operator() {
         let tests = vec![
             ("!true", false),
@@ -737,6 +746,7 @@ mod tests {
             _ => panic!("expected float object but got {:?}", obj),
         }
     }
+
     fn test_boolean_object(obj: Rc<Object>, expected_value: bool) {
         match *obj {
             Object::Boolean(value) => {
@@ -748,6 +758,20 @@ mod tests {
                 }
             }
             _ => panic!("expected boolean object but got {:?}", obj),
+        }
+    }
+
+    fn test_string_object(obj: Rc<Object>, expected_value: &str) {
+        match obj.as_ref() {
+            Object::String(value) => {
+                if value != expected_value {
+                    panic!(
+                        "expected string object with value {} but got {:?}",
+                        expected_value, obj
+                    )
+                }
+            }
+            _ => panic!("expected string object but got {:?}", obj),
         }
     }
 

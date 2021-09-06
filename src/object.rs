@@ -11,6 +11,7 @@ pub enum Object {
     Integer(i64),
     Float(f64),
     Boolean(bool),
+    String(String),
     Nil,
     Function(Function),
     /// Special object to encapsulate a return-ed value while it goes up scopes.
@@ -28,6 +29,7 @@ impl Object {
             Integer(_) => "integer".into(),
             Float(_) => "float".into(),
             Boolean(_) => "boolean".into(),
+            String(_) => "string".into(),
             Nil => "nil".into(),
             Function(_) => "function".into(),
             ReturnValue(obj) => obj.typename(),
@@ -41,9 +43,29 @@ impl Object {
             _ => false,
         }
     }
+
+    /// Converts the given value to a string (in the format of a code object).
+    ///
+    /// Use this anywhere a programmer expects to see the code-version of an object (e.g. in the REPL).
+    /// # Examples
+    /// ```rust
+    /// let obj = Object::String("hello world");
+    /// let str = String::from("\"hello world\"");
+    ///
+    /// assert_eq!(str, obj.to_string());
+    /// ```
+    pub fn to_code_string(&self) -> String {
+        use Object::*;
+
+        match self {
+            String(value) => format!("\"{}\"", value),
+            value => value.to_string(),
+        }
+    }
 }
 
 impl Display for Object {
+    /// toString() form at runtime
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use Object::*;
 
@@ -51,6 +73,7 @@ impl Display for Object {
             Integer(value) => write!(f, "{}", value),
             Float(value) => write!(f, "{}", ryu::Buffer::new().format(*value)),
             Boolean(value) => write!(f, "{}", value),
+            String(value) => write!(f, "{}", value),
             Nil => write!(f, "nil"),
             Function(func) => write!(f, "{}", func),
             ReturnValue(obj) => write!(f, "{}", obj),

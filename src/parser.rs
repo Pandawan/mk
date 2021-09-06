@@ -227,6 +227,7 @@ impl<'a> Parser<'a> {
             Token::Integer(_) => Some(Parser::parse_integer_expression),
             Token::Float(_) => Some(Parser::parse_float_expression),
             Token::True | Token::False => Some(Parser::parse_boolean_expression),
+            Token::String(_) => Some(Parser::parse_string_expression),
             Token::Nil => Some(Parser::parse_nil_expression),
 
             Token::LeftParen => Some(Parser::parse_grouped_expression),
@@ -416,6 +417,16 @@ impl<'a> Parser<'a> {
             Token::False => Ok(Expression::Boolean(false)),
             _ => Err(ParseError::Expected(
                 "boolean".to_string(),
+                parser.current_token.clone(),
+            )),
+        }
+    }
+
+    fn parse_string_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
+        match &parser.current_token {
+            Token::String(value) => Ok(Expression::String(value.clone())),
+            _ => Err(ParseError::Expected(
+                "string".to_string(),
                 parser.current_token.clone(),
             )),
         }
@@ -681,6 +692,25 @@ mod tests {
             let expr = unwrap_expression(&prog);
 
             test_boolean_literal(expr, value);
+        }
+    }
+
+    #[test]
+    fn string_expression() {
+        let input = "\"hello world\";";
+
+        let prog = setup(input, 1);
+        let expr = unwrap_expression(&prog);
+
+        match expr {
+            Expression::String(value) => {
+                assert_eq!(
+                    "hello world", value,
+                    "expected string literal with value \"hello world\" but got {}",
+                    value
+                )
+            }
+            expr => panic!("expected string literal expression but got {}", expr),
         }
     }
 
