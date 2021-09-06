@@ -2,6 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use crate::{
     ast::{BlockExpression, Expression, IdentifierLiteral, Program, Statement},
+    builtin::Builtin,
     environment::Environment,
     object::{Function, Object, RuntimeError},
     token::Token,
@@ -172,9 +173,15 @@ impl Evaluator {
 
         match result {
             Some(obj) => obj,
-            None => Rc::new(Object::Error(RuntimeError::IdentifierNotFound(
-                identifier.name,
-            ))),
+            // If we don't find the identifier, look it up as a builtin
+            // NOTE: This means that builtins are not "in environment/scope" like other variables
+            None => match Builtin::lookup(&identifier.name) {
+                // TODO: Maybe have pre-made Rc objects of builtins, so I don't have to create new ones each time
+                Some(builtin) => Rc::new(Object::Builtin(builtin)),
+                None => Rc::new(Object::Error(RuntimeError::IdentifierNotFound(
+                    identifier.name,
+                ))),
+            },
         }
     }
 
@@ -373,8 +380,7 @@ impl Evaluator {
     fn apply_function(&mut self, func: Rc<Object>, args: Vec<Rc<Object>>) -> Rc<Object> {
         match func.as_ref() {
             Object::Function(func) => {
-                // TODO: Check that number of args & params matches
-
+                // Check that number of args & params matches
                 if args.len() != func.parameters.len() {
                     return Rc::new(Object::Error(RuntimeError::BadArity {
                         expected: func.parameters.len(),
@@ -382,21 +388,30 @@ impl Evaluator {
                     }));
                 }
 
+                // Remember current environment (when exiting from call)
                 let current_env = Rc::clone(&self.env);
+                // Create a new scoped environment for function
                 let mut scoped_env = Environment::new_enclosed(Rc::clone(&func.env));
 
+                // Add arguments as variables in function's environment
                 for (ident, obj) in func.parameters.iter().zip(args.iter()) {
                     scoped_env.set(ident.name.clone(), Rc::clone(obj));
                 }
 
                 self.env = Rc::new(RefCell::new(scoped_env));
 
+                // Actually evaulate the function
                 let result = self.eval_block_expression(&func.body);
 
                 self.env = current_env;
 
                 result
             }
+            // Builtins handle themselves
+            Object::Builtin(builtin) => match builtin.apply(args) {
+                Ok(obj) => obj,
+                Err(err) => Rc::new(Object::Error(err)),
+            },
             _ => Rc::new(Object::Error(RuntimeError::NotAFunction(func))),
         }
     }
@@ -407,6 +422,7 @@ mod tests {
     use std::rc::Rc;
 
     use crate::{
+        builtin::Builtin,
         evaluator::Evaluator,
         lexer::Lexer,
         object::{Object, RuntimeError},
@@ -662,6 +678,38 @@ mod tests {
         for (input, expected_value) in tests {
             let evaluated = evaluate(input);
             test_integer_object(evaluated, expected_value);
+        }
+    }
+
+    #[test]
+    fn eval_builtin_functions() {
+        let tests = vec![
+            ("len('')", Ok(0)),
+            ("len('four')", Ok(4)),
+            ("len('hello world')", Ok(11)),
+            (
+                "len(1)",
+                Err(RuntimeError::InvalidArgumentType(
+                    Builtin::Len,
+                    Rc::new(Object::Integer(1)),
+                )),
+            ),
+            (
+                "len('hello', 'world')",
+                Err(RuntimeError::BadArity {
+                    expected: 1,
+                    got: 2,
+                }),
+            ),
+        ];
+
+        for (input, expected_value) in tests {
+            let evaluated = evaluate(input);
+
+            match expected_value {
+                Ok(expected_value) => test_integer_object(evaluated, expected_value),
+                Err(expected_error) => test_error_object(evaluated, expected_error),
+            }
         }
     }
 

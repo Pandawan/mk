@@ -2,6 +2,7 @@ use std::{cell::RefCell, fmt::Display, rc::Rc};
 
 use crate::{
     ast::{BlockExpression, IdentifierLiteral},
+    builtin::Builtin,
     environment::Environment,
     token::Token,
 };
@@ -14,6 +15,7 @@ pub enum Object {
     String(String),
     Nil,
     Function(Function),
+    Builtin(Builtin),
     /// Special object to encapsulate a return-ed value while it goes up scopes.
     /// This is never seen by the user.
     ReturnValue(Rc<Object>),
@@ -32,6 +34,7 @@ impl Object {
             String(_) => "string".into(),
             Nil => "nil".into(),
             Function(_) => "function".into(),
+            Builtin(_) => "builtin_function".into(),
             ReturnValue(obj) => obj.typename(),
             Error(_) => "error".into(),
         }
@@ -76,6 +79,7 @@ impl Display for Object {
             String(value) => write!(f, "{}", value),
             Nil => write!(f, "nil"),
             Function(func) => write!(f, "{}", func),
+            Builtin(builtin) => write!(f, "{}", builtin),
             ReturnValue(obj) => write!(f, "{}", obj),
             Error(message) => write!(f, "Error: {}", message),
         }
@@ -119,8 +123,10 @@ pub enum RuntimeError {
     IdentifierNotFound(String),
     /// When an object that is not a function is used with function call syntax
     NotAFunction(Rc<Object>),
-    ///
+    /// When a call's argument length does not match the expected function parameter length
     BadArity { expected: usize, got: usize },
+    /// When a call to builtin function passes an argument of an invalid/unsupported type
+    InvalidArgumentType(Builtin, Rc<Object>),
 }
 
 impl Display for RuntimeError {
@@ -154,8 +160,15 @@ impl Display for RuntimeError {
             IdentifierNotFound(name) => write!(f, "identifier '{}' not found", name),
             NotAFunction(obj) => write!(f, "{} is not a function", obj),
             BadArity { expected, got } => {
-                write!(f, "Expected {} arguments but got {}.", expected, got)
+                write!(f, "expected {} argument(s) but got {}.", expected, got)
             }
+            InvalidArgumentType(builtin, obj) => write!(
+                f,
+                "unsupported argument type for {} function: `{}` ({})",
+                builtin.name(),
+                obj.typename(),
+                obj
+            ),
         }
     }
 }
