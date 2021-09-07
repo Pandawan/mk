@@ -216,6 +216,8 @@ impl<'a> Lexer<'a> {
                 ')' => Ok(Token::RightParen),
                 '{' => Ok(Token::LeftBrace),
                 '}' => Ok(Token::RightBrace),
+                '[' => Ok(Token::LeftBracket),
+                ']' => Ok(Token::RightBracket),
 
                 '"' | '\'' => self.read_string(c),
 
@@ -266,7 +268,7 @@ mod tests {
 
     #[test]
     fn test_delimiters() {
-        let input = ",;(){}";
+        let input = ",;(){}[]";
         let mut lex = Lexer::new(input);
 
         assert_eq!(lex.next_token().unwrap(), Token::Comma);
@@ -275,6 +277,8 @@ mod tests {
         assert_eq!(lex.next_token().unwrap(), Token::RightParen);
         assert_eq!(lex.next_token().unwrap(), Token::LeftBrace);
         assert_eq!(lex.next_token().unwrap(), Token::RightBrace);
+        assert_eq!(lex.next_token().unwrap(), Token::LeftBracket);
+        assert_eq!(lex.next_token().unwrap(), Token::RightBracket);
     }
 
     #[test]

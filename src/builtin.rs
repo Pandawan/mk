@@ -20,7 +20,7 @@ impl Builtin {
 
     pub fn name(&self) -> String {
         match self {
-            Len => "len".into(),
+            Builtin::Len => "len".into(),
         }
     }
 

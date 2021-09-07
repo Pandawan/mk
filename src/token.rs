@@ -26,6 +26,8 @@ pub enum Token {
     RightParen,
     LeftBrace,
     RightBrace,
+    LeftBracket,
+    RightBracket,
 
     // Identifiers & Literals
     Identifier(String),
@@ -92,6 +94,8 @@ impl fmt::Display for Token {
             RightParen => write!(f, ")"),
             LeftBrace => write!(f, "{{"),
             RightBrace => write!(f, "}}"),
+            LeftBracket => write!(f, "["),
+            RightBracket => write!(f, "]"),
 
             Identifier(name) => write!(f, "{}", name),
             Integer(value) => write!(f, "{}", value),

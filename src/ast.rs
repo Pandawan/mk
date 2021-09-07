@@ -80,6 +80,8 @@ pub enum Expression {
     If(Box<IfExpression>),
     Function(Box<FunctionLiteral>),
     Call(Box<CallExpression>),
+    Array(Box<ArrayLiteral>),
+    Index(Box<IndexExpression>),
 }
 
 impl Display for Expression {
@@ -100,6 +102,8 @@ impl Display for Expression {
             If(if_exp) => write!(f, "{}", if_exp),
             Function(func) => write!(f, "{}", func),
             Call(call) => write!(f, "{}", call),
+            Array(arr) => write!(f, "{}", arr),
+            Index(index) => write!(f, "{}", index),
         }
     }
 }
@@ -238,6 +242,37 @@ impl Display for CallExpression {
                 .collect::<Vec<String>>()
                 .join(", ")
         )
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct ArrayLiteral {
+    pub elements: Vec<Expression>,
+}
+
+impl Display for ArrayLiteral {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "[{}]",
+            self.elements
+                .iter()
+                .map(|ident| ident.to_string())
+                .collect::<Vec<String>>()
+                .join(", ")
+        )
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct IndexExpression {
+    pub left: Expression,
+    pub index: Expression,
+}
+
+impl Display for IndexExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}[{}])", self.left, self.index)
     }
 }
 
