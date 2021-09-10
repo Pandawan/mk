@@ -14,6 +14,7 @@ pub enum Object {
     Boolean(bool),
     String(String),
     Nil,
+    Array(Array),
     Function(Function),
     Builtin(Builtin),
     /// Special object to encapsulate a return-ed value while it goes up scopes.
@@ -33,6 +34,7 @@ impl Object {
             Boolean(_) => "boolean".into(),
             String(_) => "string".into(),
             Nil => "nil".into(),
+            Array(_) => "array".into(),
             Function(_) => "function".into(),
             Builtin(_) => "builtin_function".into(),
             ReturnValue(obj) => obj.typename(),
@@ -78,11 +80,27 @@ impl Display for Object {
             Boolean(value) => write!(f, "{}", value),
             String(value) => write!(f, "{}", value),
             Nil => write!(f, "nil"),
+            Array(array) => write!(f, "{}", array),
             Function(func) => write!(f, "{}", func),
             Builtin(builtin) => write!(f, "{}", builtin),
             ReturnValue(obj) => write!(f, "{}", obj),
             Error(message) => write!(f, "Error: {}", message),
         }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Array {
+    pub elements: Vec<Rc<Object>>,
+}
+
+impl Display for Array {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let elements: Vec<String> = (&self.elements)
+            .into_iter()
+            .map(|e| e.to_string())
+            .collect();
+        write!(f, "[{}]", elements.join(", "))
     }
 }
 
@@ -127,6 +145,15 @@ pub enum RuntimeError {
     BadArity { expected: usize, got: usize },
     /// When a call to builtin function passes an argument of an invalid/unsupported type
     InvalidArgumentType(Builtin, Rc<Object>),
+    /// When attempting to index an object that does not support it (e.g. `1[0]`)
+    IndexNotSupported(Rc<Object>),
+    /// When attempting to index an object with a non-integer number (e.g. `[1, 2][true]`)
+    InvalidIndexOperandType(Rc<Object>),
+    /// When trying to get an element at a given index but it is outside of bounds
+    IndexOutOfBounds {
+        array: Rc<Object>,
+        index: Rc<Object>,
+    },
 }
 
 impl Display for RuntimeError {
@@ -169,6 +196,25 @@ impl Display for RuntimeError {
                 obj.typename(),
                 obj
             ),
+            IndexNotSupported(left) => {
+                write!(
+                    f,
+                    "index operator not supported for `{}` ({})",
+                    left.typename(),
+                    left
+                )
+            }
+            InvalidIndexOperandType(index) => {
+                write!(
+                    f,
+                    "unsupported index operand type: `{}` ({})",
+                    index.typename(),
+                    index
+                )
+            }
+            IndexOutOfBounds { array, index } => {
+                write!(f, "index {} out of bounds for array {}", index, array)
+            }
         }
     }
 }

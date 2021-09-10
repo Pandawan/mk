@@ -1,10 +1,10 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, convert::TryInto, rc::Rc};
 
 use crate::{
     ast::{BlockExpression, Expression, IdentifierLiteral, Program, Statement},
     builtin::Builtin,
     environment::Environment,
-    object::{Function, Object, RuntimeError},
+    object::{Array, Function, Object, RuntimeError},
     token::Token,
 };
 
@@ -133,6 +133,25 @@ impl Evaluator {
                 &if_expr.alternative,
             ),
 
+            Expression::Array(arr) => {
+                let elements = self.eval_expressions(&arr.elements);
+                if elements.len() == 1 && elements.first().unwrap().is_error() {
+                    return Rc::clone(elements.first().unwrap());
+                }
+                Rc::new(Object::Array(Array { elements }))
+            }
+            Expression::Index(expr) => {
+                let left = self.eval_expression(&expr.left);
+                if left.is_error() {
+                    return left;
+                }
+                let index = self.eval_expression(&expr.index);
+                if index.is_error() {
+                    return index;
+                }
+                self.eval_index_expression(left, index)
+            }
+
             Expression::Function(func) => Rc::new(Object::Function(Function {
                 parameters: func.parameters.clone(),
                 body: Rc::clone(&func.body),
@@ -151,8 +170,6 @@ impl Evaluator {
 
                 self.apply_function(func, args)
             }
-
-            _ => todo!("Implement other expressions {}", expr),
         }
     }
 
@@ -245,6 +262,7 @@ impl Evaluator {
                 self.eval_string_infix_expression(operator, left_value, right_value)
             }
 
+            // TODO: Have == and != result in true/false regardless of type (instead of invalid operand error)
             (_, _) => Rc::new(Object::Error(RuntimeError::InvalidInfixOperandType(
                 operator.clone(),
                 left,
@@ -349,6 +367,48 @@ impl Evaluator {
         }
     }
 
+    fn eval_index_expression(&mut self, left: Rc<Object>, index: Rc<Object>) -> Rc<Object> {
+        match left.as_ref() {
+            Object::Array(_) => self.eval_array_index_expression(left, index),
+            _ => Rc::new(Object::Error(RuntimeError::IndexNotSupported(left))),
+        }
+    }
+
+    fn eval_array_index_expression(&mut self, array: Rc<Object>, index: Rc<Object>) -> Rc<Object> {
+        // TODO: Avoid this?
+        let arr = match array.as_ref() {
+            Object::Array(arr) => arr,
+            _ => unreachable!("Should always be an array!"),
+        };
+
+        match index.as_ref() {
+            Object::Integer(i) => {
+                let length: i64 = arr.elements.len().try_into().unwrap();
+
+                // Out of bounds
+                if *i <= -length || *i >= length {
+                    return Rc::new(Object::Error(RuntimeError::IndexOutOfBounds {
+                        array,
+                        index,
+                    }));
+                }
+
+                let i = if *i >= 0 {
+                    *i as usize
+                } else {
+                    (length + *i) as usize
+                };
+
+                match arr.elements.get(i) {
+                    Some(el) => Rc::clone(el),
+                    // TODO: Should this be an error?
+                    None => Rc::new(Object::Nil),
+                }
+            }
+            _ => Rc::new(Object::Error(RuntimeError::InvalidIndexOperandType(index))),
+        }
+    }
+
     fn eval_if_expression(
         &mut self,
         condition: &Expression,
@@ -425,7 +485,7 @@ mod tests {
         builtin::Builtin,
         evaluator::Evaluator,
         lexer::Lexer,
-        object::{Object, RuntimeError},
+        object::{Array, Object, RuntimeError},
         parser::Parser,
         token::Token,
     };
@@ -622,6 +682,52 @@ mod tests {
     }
 
     #[test]
+    fn eval_array_literals() {
+        let input = "[1, 2 * 2, 3 + 3]";
+        let evaluated = evaluate(input);
+
+        match evaluated.as_ref() {
+            Object::Array(arr) => {
+                if arr.elements.len() != 3 {
+                    panic!(
+                        "expected array object with 3 elements but got {} ({})",
+                        arr.elements.len(),
+                        arr
+                    )
+                }
+
+                test_integer_object(Rc::clone(&arr.elements[0]), 1);
+                test_integer_object(Rc::clone(&arr.elements[1]), 4);
+                test_integer_object(Rc::clone(&arr.elements[2]), 6);
+            }
+            obj => panic!("expected array object but got {}", obj),
+        }
+    }
+
+    #[test]
+    fn eval_array_index_expression() {
+        let tests = vec![
+            ("[1, 2, 3][0]", 1),
+            ("[1, 2, 3][1]", 2),
+            ("[1, 2, 3][2]", 3),
+            ("let i = 0; [1][i];", 1),
+            ("[1, 2, 3][1 + 1];", 3),
+            ("let myArray = [1, 2, 3]; myArray[2];", 3),
+            (
+                "let myArray = [1, 2, 3]; myArray[0] + myArray[1] + myArray[2];",
+                6,
+            ),
+            ("let myArray = [1, 2, 3]; let i = myArray[0]; myArray[i]", 2),
+            ("[1, 2, 3][-1]", 3),
+        ];
+
+        for (input, expected_value) in tests {
+            let evaluated = evaluate(input);
+            test_integer_object(evaluated, expected_value)
+        }
+    }
+
+    #[test]
     fn eval_function_expression() {
         let input = "fn (x) { x + 2; }";
         let evaluated = evaluate(input);
@@ -791,6 +897,19 @@ mod tests {
                 ),
             ),
             ("foobar", RuntimeError::IdentifierNotFound("foobar".into())),
+            (
+                "[0, 1, 2][3]",
+                RuntimeError::IndexOutOfBounds {
+                    array: Rc::new(Object::Array(Array {
+                        elements: vec![
+                            Rc::new(Object::Integer(0)),
+                            Rc::new(Object::Integer(1)),
+                            Rc::new(Object::Integer(2)),
+                        ],
+                    })),
+                    index: Rc::new(Object::Integer(3)),
+                },
+            ),
         ];
 
         for (input, expected_error) in tests {
