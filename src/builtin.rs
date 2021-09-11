@@ -5,7 +5,7 @@ use crate::object::{Object, RuntimeError};
 #[derive(Debug, PartialEq)]
 pub enum Builtin {
     Len,
-    // TODO: Type
+    Type,
     // TODO: Print
     // TODO: Time
 }
@@ -14,6 +14,7 @@ impl Builtin {
     pub fn lookup(name: &str) -> Option<Builtin> {
         match name {
             "len" => Some(Builtin::Len),
+            "type" => Some(Builtin::Type),
             _ => None,
         }
     }
@@ -21,6 +22,7 @@ impl Builtin {
     pub fn name(&self) -> String {
         match self {
             Builtin::Len => "len".into(),
+            Builtin::Type => "type".into(),
         }
     }
 
@@ -37,9 +39,19 @@ impl Builtin {
                 let arg = Rc::clone(args.first().unwrap());
                 match arg.as_ref() {
                     Object::String(str) => Ok(Rc::new(Object::Integer(str.len() as i64))),
-                    // TODO: Array length
+                    Object::Array(arr) => Ok(Rc::new(Object::Integer(arr.elements.len() as i64))),
                     _ => Err(RuntimeError::InvalidArgumentType(Builtin::Len, arg)),
                 }
+            }
+            Builtin::Type => {
+                if args.len() != 1 {
+                    return Err(RuntimeError::BadArity {
+                        expected: 1,
+                        got: args.len(),
+                    });
+                }
+                let arg = Rc::clone(args.first().unwrap());
+                Ok(Rc::new(Object::String(arg.typename())))
             }
         }
     }

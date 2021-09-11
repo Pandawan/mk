@@ -790,9 +790,9 @@ mod tests {
     #[test]
     fn eval_builtin_functions() {
         let tests = vec![
-            ("len('')", Ok(0)),
-            ("len('four')", Ok(4)),
-            ("len('hello world')", Ok(11)),
+            ("len('')", Ok(Object::Integer(0))),
+            ("len('four')", Ok(Object::Integer(4))),
+            ("len('hello world')", Ok(Object::Integer(11))),
             (
                 "len(1)",
                 Err(RuntimeError::InvalidArgumentType(
@@ -807,13 +807,25 @@ mod tests {
                     got: 2,
                 }),
             ),
+            ("len([])", Ok(Object::Integer(0))),
+            ("len([1])", Ok(Object::Integer(1))),
+            ("len([1, 'hello world', []])", Ok(Object::Integer(3))),
+            ("type(1)", Ok(Object::String("integer".to_owned()))),
+            ("type('string')", Ok(Object::String("string".to_owned()))),
+            ("type(type)", Ok(Object::String("builtin".to_owned()))),
         ];
 
         for (input, expected_value) in tests {
             let evaluated = evaluate(input);
 
             match expected_value {
-                Ok(expected_value) => test_integer_object(evaluated, expected_value),
+                Ok(Object::Integer(expected_value)) => {
+                    test_integer_object(evaluated, expected_value)
+                }
+                Ok(Object::String(expected_value)) => {
+                    test_string_object(evaluated, &expected_value)
+                }
+                Ok(_) => unimplemented!(),
                 Err(expected_error) => test_error_object(evaluated, expected_error),
             }
         }

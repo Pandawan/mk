@@ -7,6 +7,7 @@ use crate::{
     token::Token,
 };
 
+// TODO: Add Range object (to allow for myArr[0..1] AND for i in 0..1)
 #[derive(Debug, PartialEq)]
 pub enum Object {
     Integer(i64),
@@ -36,7 +37,7 @@ impl Object {
             Nil => "nil".into(),
             Array(_) => "array".into(),
             Function(_) => "function".into(),
-            Builtin(_) => "builtin_function".into(),
+            Builtin(_) => "builtin".into(),
             ReturnValue(obj) => obj.typename(),
             Error(_) => "error".into(),
         }
