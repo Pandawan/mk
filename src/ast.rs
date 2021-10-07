@@ -76,6 +76,7 @@ pub enum Expression {
     // Complex
     Prefix(Box<PrefixExpression>),
     Infix(Box<InfixExpression>),
+    Assignment(Box<AssignmentExpression>),
     Block(Box<BlockExpression>),
     If(Box<IfExpression>),
     Function(Box<FunctionLiteral>),
@@ -98,6 +99,7 @@ impl Display for Expression {
 
             Prefix(prefix) => write!(f, "{}", prefix),
             Infix(infix) => write!(f, "{}", infix),
+            Assignment(assignment) => write!(f, "{}", assignment),
             Block(block) => write!(f, "{}", block),
             If(if_exp) => write!(f, "{}", if_exp),
             Function(func) => write!(f, "{}", func),
@@ -161,6 +163,19 @@ impl Display for InfixExpression {
             op = self.operator,
             r = self.right
         )
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct AssignmentExpression {
+    // TODO: Add support for assigning array indices, etc. (allow any kind of expression and check at runtime?)
+    pub identifier: IdentifierLiteral,
+    pub value: Expression,
+}
+
+impl Display for AssignmentExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({l} = {r})", l = self.identifier, r = self.value)
     }
 }
 

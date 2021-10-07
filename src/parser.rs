@@ -1,16 +1,12 @@
 use std::fmt::Display;
 use std::rc::Rc;
 
-use crate::ast::{
-    ArrayLiteral, BlockExpression, CallExpression, Expression, FunctionLiteral, IdentifierLiteral,
-    IfExpression, IndexExpression, InfixExpression, PrefixExpression, Program, Statement,
-};
+use crate::ast::{ArrayLiteral, AssignmentExpression, BlockExpression, CallExpression, Expression, FunctionLiteral, IdentifierLiteral, IfExpression, IndexExpression, InfixExpression, PrefixExpression, Program, Statement};
 use crate::lexer::LexError;
 use crate::{lexer::Lexer, token::Token};
 
 #[derive(Debug)]
 pub enum ParseError {
-    Unexpected(Token),
     // TODO: Might want to use TokenKind to allow for Expected(TokenKind, Token)
     Expected(String, Token),
 
@@ -23,7 +19,6 @@ pub enum ParseError {
 impl Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ParseError::Unexpected(token) => write!(f, "Unexpected token {}", token),
             ParseError::Expected(expected, got) => {
                 write!(
                     f,
@@ -55,6 +50,7 @@ type InfixFn = fn(parser: &mut Parser<'_>, left: Expression) -> ParseResult<Expr
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 enum Precedence {
     Lowest,
+    Assign,
     LogicalOr,
     LogicalAnd,
     Equals,
@@ -70,6 +66,7 @@ enum Precedence {
 impl Precedence {
     fn token_precedence(tok: &Token) -> Precedence {
         match tok {
+            Token::Equal => Precedence::Assign,
             Token::OrOr => Precedence::LogicalOr,
             Token::AndAnd => Precedence::LogicalAnd,
             Token::EqualEqual => Precedence::Equals,
@@ -250,6 +247,8 @@ impl<'a> Parser<'a> {
             Token::LeftParen => Some(Parser::parse_call_expression),
 
             Token::LeftBracket => Some(Parser::parse_index_expression),
+
+            Token::Equal => Some(Parser::parse_assignment_expression),
 
             Token::Plus
             | Token::Minus
@@ -499,6 +498,25 @@ impl<'a> Parser<'a> {
         // Consume right (closing) bracket
         parser.expect_peek(Token::RightBracket)?;
         Ok(Expression::Index(Box::new(IndexExpression { left, index })))
+    }
+
+    fn parse_assignment_expression(parser: &mut Parser<'_>, left: Expression) -> ParseResult<Expression> {
+        match left {
+            // Left side must be an indentifier
+            Expression::Identifier(identifier) => {
+                // Consume = token
+                parser.next_token()?;
+
+                let value = parser.parse_expression(Precedence::Lowest)?;
+
+                Ok(Expression::Assignment(Box::new(AssignmentExpression { identifier, value })))
+            }
+
+            _ => Err(ParseError::Expected(
+                "identifier".to_string(),
+                parser.current_token.clone(),
+            )),
+        }
     }
 
     fn parse_expression_list(&mut self, end: Token) -> ParseResult<Vec<Expression>> {

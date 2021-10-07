@@ -1,7 +1,7 @@
 use std::{cell::RefCell, convert::TryInto, rc::Rc};
 
 use crate::{
-    ast::{BlockExpression, Expression, IdentifierLiteral, InfixExpression, Program, Statement},
+    ast::{BlockExpression, Expression, IdentifierLiteral, Program, Statement},
     builtin::Builtin,
     environment::Environment,
     object::{Array, Function, Object, RuntimeError},
@@ -134,6 +134,25 @@ impl Evaluator {
                 self.eval_infix_expression(&infix.operator, left, right)
             }
 
+            Expression::Assignment(assignment) => {
+                let obj = self.eval_expression(&assignment.value);
+                // Early return the first error received
+                if obj.is_error() {
+                    return obj;
+                }
+
+                // TODO: Make sure that variables stay within their scopes
+                // e.g. `{ let hello = 5; { let hello = 10; } hello }`
+                // This would require changing the BlockExpression to create a new environment
+
+                // Add the variable to the surrounding environment
+                self.env
+                    .borrow_mut()
+                    .set(assignment.identifier.name.to_owned(), obj);
+
+                Rc::new(Object::Nil)
+            }
+
             // TODO: Perhaps Block expressions should have their own scope? What about if/for/while/etc.
             Expression::Block(block) => self.eval_block_expression(block),
 
@@ -183,7 +202,7 @@ impl Evaluator {
         }
     }
 
-    fn eval_expressions(&mut self, exprs: &Vec<Expression>) -> Vec<Rc<Object>> {
+    fn eval_expressions(&mut self, exprs: &[Expression]) -> Vec<Rc<Object>> {
         let mut result = Vec::new();
         for expr in exprs {
             let evaluated = self.eval_expression(expr);
@@ -408,8 +427,8 @@ impl Evaluator {
     fn eval_string_infix_expression(
         &self,
         operator: &Token,
-        left_value: &String,
-        right_value: &String,
+        left_value: &str,
+        right_value: &str,
     ) -> Rc<Object> {
         match operator {
             Token::Plus => Rc::new(Object::String(left_value.to_owned() + right_value)),
@@ -419,8 +438,8 @@ impl Evaluator {
             operator => Rc::new(Object::Error(RuntimeError::InvalidInfixOperandType(
                 operator.clone(),
                 // TODO: Find a way to keep using the previous Object::String rather than creating a new one
-                Rc::new(Object::String(left_value.clone())),
-                Rc::new(Object::String(right_value.clone())),
+                Rc::new(Object::String(left_value.to_owned())),
+                Rc::new(Object::String(right_value.to_owned())),
             ))),
         }
     }

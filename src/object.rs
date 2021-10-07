@@ -1,4 +1,4 @@
-use std::{any::Any, cell::RefCell, fmt::Display, rc::Rc};
+use std::{cell::RefCell, fmt::Display, rc::Rc};
 
 use crate::{
     ast::{BlockExpression, IdentifierLiteral},
@@ -45,10 +45,7 @@ impl Object {
     }
 
     pub fn is_error(&self) -> bool {
-        match self {
-            Self::Error(_) => true,
-            _ => false,
-        }
+        matches!(self, Self::Error(_))
     }
 
     /// Converts the given value to a string (in the format of a code object).
@@ -99,7 +96,7 @@ pub struct Array {
 impl Display for Array {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let elements: Vec<String> = (&self.elements)
-            .into_iter()
+            .iter()
             .map(|e| e.to_string())
             .collect();
         write!(f, "[{}]", elements.join(", "))
@@ -116,7 +113,7 @@ pub struct Function {
 impl Display for Function {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let params: Vec<String> = (&self.parameters)
-            .into_iter()
+            .iter()
             .map(|p| p.to_string())
             .collect();
 
