@@ -1,4 +1,4 @@
-use std::{cell::RefCell, fmt::Display, rc::Rc};
+use std::{any::Any, cell::RefCell, fmt::Display, rc::Rc};
 
 use crate::{
     ast::{BlockExpression, IdentifierLiteral},
@@ -21,6 +21,7 @@ pub enum Object {
     /// Special object to encapsulate a return-ed value while it goes up scopes.
     /// This is never seen by the user.
     ReturnValue(Rc<Object>),
+    // TODO: Not sure if Errors should be objects? It may be better to represent them through Result::Err and have "catchable" errors be actual error objects
     // TODO: Add Spans to the entire codebase so errors can report a trace
     Error(RuntimeError),
 }
@@ -136,6 +137,9 @@ pub enum RuntimeError {
     InvalidPrefixOperandType(Token, Rc<Object>),
     /// When attempting an infix operation on invalid types/types that are not compatible (e.g. bool + bool, int + bool)
     InvalidInfixOperandType(Token, Rc<Object>, Rc<Object>),
+    // When attempting a logical infix (&& or ||) on invalid types/types that are not compatible (e.g. int && bool)
+    // NOTE: Second one is Optional because we may have only evaluated the first when the error occurs
+    InvalidLogicalInfixOperandType(Token, Rc<Object>, Option<Rc<Object>>),
     /// When expecting a boolean conditional expression (e.g. if 1)
     ExpectedBooleanCondition(Rc<Object>),
     /// When referencing an identifier that does not exist/has not been defined
@@ -143,7 +147,10 @@ pub enum RuntimeError {
     /// When an object that is not a function is used with function call syntax
     NotAFunction(Rc<Object>),
     /// When a call's argument length does not match the expected function parameter length
-    BadArity { expected: usize, got: usize },
+    BadArity {
+        expected: usize,
+        got: usize,
+    },
     /// When a call to builtin function passes an argument of an invalid/unsupported type
     InvalidArgumentType(Builtin, Rc<Object>),
     /// When attempting to index an object that does not support it (e.g. `1[0]`)
@@ -179,6 +186,28 @@ impl Display for RuntimeError {
                 right.typename(),
                 right
             ),
+            InvalidLogicalInfixOperandType(operator, left, right) => {
+                if let Some(right_obj) = right {
+                    write!(
+                        f,
+                        "unsupported operand type(s) for logical {} operator: `{}` ({}) and `{}` ({})", 
+                        operator, 
+                        left.typename(),
+                        left,
+                        right_obj.typename(), 
+                        right_obj
+                    )
+                }
+                else {
+                    write!(
+                        f, 
+                        "unsupported operand type for logical {} operator: `{}` ({})",
+                        operator, 
+                        left.typename(),
+                        left
+                    )
+                }
+            }
             ExpectedBooleanCondition(expression) => write!(
                 f,
                 "expected a `boolean` condition but got `{}` ({})",

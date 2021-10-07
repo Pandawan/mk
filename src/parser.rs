@@ -55,6 +55,8 @@ type InfixFn = fn(parser: &mut Parser<'_>, left: Expression) -> ParseResult<Expr
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 enum Precedence {
     Lowest,
+    LogicalOr,
+    LogicalAnd,
     Equals,
     LessGreater,
     Sum,
@@ -68,6 +70,8 @@ enum Precedence {
 impl Precedence {
     fn token_precedence(tok: &Token) -> Precedence {
         match tok {
+            Token::OrOr => Precedence::LogicalOr,
+            Token::AndAnd => Precedence::LogicalAnd,
             Token::EqualEqual => Precedence::Equals,
             Token::BangEqual => Precedence::Equals,
             Token::LessThan => Precedence::LessGreater,
@@ -255,7 +259,9 @@ impl<'a> Parser<'a> {
             | Token::BangEqual
             | Token::LessThan
             // TODO: Implement Exponent (Token::StarStar)
-            | Token::GreaterThan => Some(Parser::parse_infix_expression),
+            | Token::GreaterThan 
+            | Token::AndAnd
+            | Token::OrOr => Some(Parser::parse_infix_expression),
             _ => None,
         }
     }
@@ -857,7 +863,7 @@ mod tests {
                     );
                     test_integer_literal(&expr.right, right);
                 }
-                expr => panic!("expected prefix expression but got {}", expr),
+                expr => panic!("expected infix expression but got {}", expr),
             }
         }
     }
@@ -892,7 +898,7 @@ mod tests {
                     );
                     test_float_literal(&expr.right, right);
                 }
-                expr => panic!("expected prefix expression but got {}", expr),
+                expr => panic!("expected infix expression but got {}", expr),
             }
         }
     }
@@ -904,6 +910,8 @@ mod tests {
             ("true == true", true, Token::EqualEqual, true),
             ("true != false", true, Token::BangEqual, false),
             ("false == false", false, Token::EqualEqual, false),
+            ("true && false", true, Token::AndAnd, false),
+            ("true || false", true, Token::OrOr, false),
         ];
 
         for (input, left, op, right) in tests {
@@ -921,7 +929,7 @@ mod tests {
                     );
                     test_boolean_literal(&expr.right, right);
                 }
-                expr => panic!("expected prefix expression but got {}", expr),
+                expr => panic!("expected infix expression but got {}", expr),
             }
         }
     }

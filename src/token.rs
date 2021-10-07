@@ -21,13 +21,19 @@ pub enum Token {
 
     // Delimiters
     Comma,
+    Dot,
     Semicolon,
+    Colon,
+
     LeftParen,
     RightParen,
     LeftBrace,
     RightBrace,
     LeftBracket,
     RightBracket,
+
+    AndAnd, // &&
+    OrOr,   // ||
 
     // Identifiers & Literals
     Identifier(String),
@@ -89,7 +95,10 @@ impl fmt::Display for Token {
             GreaterEqual => write!(f, ">="),
 
             Comma => write!(f, ","),
+            Dot => write!(f, "."),
             Semicolon => write!(f, ";"),
+            Colon => write!(f, ":"),
+
             LeftParen => write!(f, "("),
             RightParen => write!(f, ")"),
             LeftBrace => write!(f, "{{"),
@@ -97,11 +106,20 @@ impl fmt::Display for Token {
             LeftBracket => write!(f, "["),
             RightBracket => write!(f, "]"),
 
+            AndAnd => write!(f, "&&"),
+            OrOr => write!(f, "||"),
+
             Identifier(name) => write!(f, "{}", name),
             Integer(value) => write!(f, "{}", value),
-            /* TODO: This may not always print the correct value.
-            e.g. `1.0` will print `1` */
-            Float(value) => write!(f, "{}", value),
+            Float(value) => {
+                // Force one-decimal value for floats with no decimal place
+                // e.g. 1.0 instead of 1
+                if value.fract() == 0.0 {
+                    write!(f, "{:.1}", value)
+                } else {
+                    write!(f, "{}", value)
+                }
+            }
             String(value) => write!(f, "\"{}\"", value),
 
             True => write!(f, "true"),

@@ -1,7 +1,7 @@
 use std::{cell::RefCell, convert::TryInto, rc::Rc};
 
 use crate::{
-    ast::{BlockExpression, Expression, IdentifierLiteral, Program, Statement},
+    ast::{BlockExpression, Expression, IdentifierLiteral, InfixExpression, Program, Statement},
     builtin::Builtin,
     environment::Environment,
     object::{Array, Function, Object, RuntimeError},
@@ -111,6 +111,16 @@ impl Evaluator {
                 self.eval_prefix_expression(&prefix.operator, right)
             }
             Expression::Infix(infix) => {
+                // TODO: I don't like this special-casing & hardcoding...
+                // Short circuiting operators have a different handler
+                if infix.operator == Token::AndAnd || infix.operator == Token::OrOr {
+                    return self.eval_infix_expression_with_short_circuiting(
+                        &infix.operator,
+                        &infix.left,
+                        &infix.right,
+                    );
+                }
+
                 let left = self.eval_expression(&infix.left);
                 // Early return the first error received
                 if left.is_error() {
@@ -233,6 +243,51 @@ impl Evaluator {
         }
     }
 
+    fn eval_infix_expression_with_short_circuiting(
+        &mut self,
+        operator: &Token,
+        left_expr: &Expression,
+        right_expr: &Expression,
+    ) -> Rc<Object> {
+        if *operator != Token::AndAnd && *operator != Token::OrOr {
+            panic!("Only && and || operators can short circuit!")
+        };
+
+        let left = self.eval_expression(left_expr);
+
+        // At this point, know operator can short circuit
+        match (left.as_ref(), operator) {
+            // Short-circuiting cases
+            // false && <>
+            (Object::Boolean(false), Token::AndAnd) => Rc::new(Object::Boolean(false)),
+            // true || <>
+            (Object::Boolean(true), Token::OrOr) => Rc::new(Object::Boolean(true)),
+
+            // Non-short-circuiting case
+            (Object::Boolean(left_value), Token::AndAnd | Token::OrOr) => {
+                let right = self.eval_expression(right_expr);
+
+                match right.as_ref() {
+                    Object::Boolean(right_value) => {
+                        self.eval_boolean_infix_expression(operator, *left_value, *right_value)
+                    }
+                    _ => Rc::new(Object::Error(RuntimeError::InvalidLogicalInfixOperandType(
+                        operator.clone(),
+                        left,
+                        Some(right),
+                    ))),
+                }
+            }
+
+            // Invalid left operand type
+            _ => Rc::new(Object::Error(RuntimeError::InvalidLogicalInfixOperandType(
+                operator.clone(),
+                left,
+                None,
+            ))),
+        }
+    }
+
     fn eval_infix_expression(
         &self,
         operator: &Token,
@@ -337,6 +392,9 @@ impl Evaluator {
             // NOTE: No truthy/implicit conversion
             Token::EqualEqual => Rc::new(Object::Boolean(left_value == right_value)),
             Token::BangEqual => Rc::new(Object::Boolean(left_value != right_value)),
+
+            Token::AndAnd => Rc::new(Object::Boolean(left_value && right_value)),
+            Token::OrOr => Rc::new(Object::Boolean(left_value || right_value)),
 
             operator => Rc::new(Object::Error(RuntimeError::InvalidInfixOperandType(
                 operator.clone(),
@@ -591,6 +649,47 @@ mod tests {
     }
 
     #[test]
+    fn eval_boolean_logical_expression() {
+        let tests = vec![
+            ("true && true", Object::Boolean(true)),
+            ("true && false", Object::Boolean(false)),
+            ("false && true", Object::Boolean(false)),
+            ("false && false", Object::Boolean(false)),
+            ("true || true", Object::Boolean(true)),
+            ("true || false", Object::Boolean(true)),
+            ("false || true", Object::Boolean(true)),
+            ("false || false", Object::Boolean(false)),
+            (
+                "let calls = 0; false && { calls = 1; true }; calls",
+                Object::Integer(0), // Short circuit
+            ),
+            (
+                "let calls = 0; true && { calls = 1; true }; calls",
+                Object::Integer(1), // Evaluate right (not short circuiting)
+            ),
+            (
+                "let calls = 0; false || { calls = 1; true }; calls",
+                Object::Integer(1), // Evaluate right (not short circuiting)
+            ),
+            (
+                "let calls = 0; true || { calls = 1; true }; calls",
+                Object::Integer(0), // Short circuit
+            ),
+        ];
+
+        for (input, expected_obj) in tests {
+            let evaluated = evaluate(input);
+            match expected_obj {
+                Object::Boolean(expected_value) => {
+                    test_boolean_object(evaluated, expected_value);
+                }
+                Object::Integer(expected_value) => test_integer_object(evaluated, expected_value),
+                _ => panic!("expected boolean or integer but got {}", expected_obj),
+            }
+        }
+    }
+
+    #[test]
     fn eval_string_expression() {
         let tests = vec![
             ("\"hello world\"", "hello world"),
@@ -629,12 +728,13 @@ mod tests {
             ("if (1 < 2) { 10 } else { 20 }", Object::Integer(10)),
         ];
 
-        for (input, expected_value) in tests {
+        for (input, expected_obj) in tests {
             let evaluated = evaluate(input);
 
-            match expected_value {
-                Object::Integer(i) => test_integer_object(evaluated, i),
-                _ => test_null_object(evaluated),
+            match expected_obj {
+                Object::Integer(expected_value) => test_integer_object(evaluated, expected_value),
+                Object::Nil => test_null_object(evaluated),
+                _ => panic!("expected integer or nil but got {}", expected_obj),
             }
         }
     }
@@ -810,9 +910,9 @@ mod tests {
             ("len([])", Ok(Object::Integer(0))),
             ("len([1])", Ok(Object::Integer(1))),
             ("len([1, 'hello world', []])", Ok(Object::Integer(3))),
-            ("type(1)", Ok(Object::String("integer".to_owned()))),
-            ("type('string')", Ok(Object::String("string".to_owned()))),
-            ("type(type)", Ok(Object::String("builtin".to_owned()))),
+            ("typeof(1)", Ok(Object::String("integer".to_owned()))),
+            ("typeof('string')", Ok(Object::String("string".to_owned()))),
+            ("typeof(typeof)", Ok(Object::String("builtin".to_owned()))),
         ];
 
         for (input, expected_value) in tests {

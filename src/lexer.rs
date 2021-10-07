@@ -7,6 +7,7 @@ use crate::token::Token;
 
 #[derive(Debug)]
 pub enum LexError {
+    UnexpectedToken(char),
     StringNotClosed(char),
     InvalidEscape(char),
     InvalidFloat(ParseFloatError),
@@ -16,6 +17,7 @@ pub enum LexError {
 impl Display for LexError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            LexError::UnexpectedToken(c) => write!(f, "Unexpected token \"{}\"", c),
             LexError::StringNotClosed(c) => write!(
                 f,
                 "Expected closing {} of string literal but reached EOF",
@@ -112,13 +114,20 @@ impl<'a> Lexer<'a> {
         while let Some(&ch) = self.peek_char() {
             if is_digit(ch) {
                 s.push(self.read_char().unwrap());
-            } else if ch == '.' {
+            }
+            // Dot for decimals
+            else if ch == '.' {
                 if seen_dot == false {
                     seen_dot = true;
                     s.push(self.read_char().unwrap());
                 } else {
                     break;
                 }
+            }
+            // Underscore for separation
+            else if ch == '_' {
+                // Ignore it
+                self.read_char();
             } else {
                 break;
             }
@@ -211,7 +220,10 @@ impl<'a> Lexer<'a> {
                 },
 
                 ',' => Ok(Token::Comma),
+                '.' => Ok(Token::Dot),
                 ';' => Ok(Token::Semicolon),
+                ':' => Ok(Token::Colon),
+
                 '(' => Ok(Token::LeftParen),
                 ')' => Ok(Token::RightParen),
                 '{' => Ok(Token::LeftBrace),
@@ -219,12 +231,29 @@ impl<'a> Lexer<'a> {
                 '[' => Ok(Token::LeftBracket),
                 ']' => Ok(Token::RightBracket),
 
+                '&' => match self.peek_char() {
+                    // AndAnd: &&
+                    Some('&') => {
+                        self.read_char();
+                        Ok(Token::AndAnd)
+                    }
+                    _ => Err(LexError::UnexpectedToken(c)),
+                },
+                '|' => match self.peek_char() {
+                    // OrOr: ||
+                    Some('|') => {
+                        self.read_char();
+                        Ok(Token::OrOr)
+                    }
+                    _ => Err(LexError::UnexpectedToken(c)),
+                },
+
                 '"' | '\'' => self.read_string(c),
 
                 c if is_digit(c) => self.read_number(c),
                 c if is_identifier_char(c) => self.read_identifier_or_keyword(c),
 
-                _ => panic!("Unknown symbol {}", c), // TODO: Token::Illegal(c)? Some kind of error reporting
+                _ => Err(LexError::UnexpectedToken(c)),
             }
         } else {
             Ok(Token::Eof)
@@ -247,7 +276,7 @@ mod tests {
 
     #[test]
     fn test_operators() {
-        let input = "+-*/=! **==!=<><=>=";
+        let input = "+-*/=! **==!=<><=>= && ||";
         let mut lex = Lexer::new(input);
 
         assert_eq!(lex.next_token().unwrap(), Token::Plus);
@@ -264,15 +293,21 @@ mod tests {
         assert_eq!(lex.next_token().unwrap(), Token::GreaterThan);
         assert_eq!(lex.next_token().unwrap(), Token::LessEqual);
         assert_eq!(lex.next_token().unwrap(), Token::GreaterEqual);
+
+        assert_eq!(lex.next_token().unwrap(), Token::AndAnd);
+        assert_eq!(lex.next_token().unwrap(), Token::OrOr);
     }
 
     #[test]
     fn test_delimiters() {
-        let input = ",;(){}[]";
+        let input = ",.;:(){}[]";
         let mut lex = Lexer::new(input);
 
         assert_eq!(lex.next_token().unwrap(), Token::Comma);
+        assert_eq!(lex.next_token().unwrap(), Token::Dot);
         assert_eq!(lex.next_token().unwrap(), Token::Semicolon);
+        assert_eq!(lex.next_token().unwrap(), Token::Colon);
+
         assert_eq!(lex.next_token().unwrap(), Token::LeftParen);
         assert_eq!(lex.next_token().unwrap(), Token::RightParen);
         assert_eq!(lex.next_token().unwrap(), Token::LeftBrace);
@@ -301,16 +336,18 @@ mod tests {
 
     #[test]
     fn test_integer() {
-        let input = "012312";
+        let input = "012312 12_345";
         let mut lex = Lexer::new(input);
         assert_eq!(lex.next_token().unwrap(), Token::Integer(12312));
+        assert_eq!(lex.next_token().unwrap(), Token::Integer(12345));
     }
 
     #[test]
     fn test_float() {
-        let input = "012312.321";
+        let input = "012312.321 123_45.6_7";
         let mut lex = Lexer::new(input);
         assert_eq!(lex.next_token().unwrap(), Token::Float(12312.321));
+        assert_eq!(lex.next_token().unwrap(), Token::Float(12345.67));
     }
 
     #[test]
