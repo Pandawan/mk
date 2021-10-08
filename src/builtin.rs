@@ -39,7 +39,9 @@ impl Builtin {
                 let arg = Rc::clone(args.first().unwrap());
                 match arg.as_ref() {
                     Object::String(str) => Ok(Rc::new(Object::Integer(str.len() as i64))),
-                    Object::Array(arr) => Ok(Rc::new(Object::Integer(arr.elements.len() as i64))),
+                    Object::Array(arr) => {
+                        Ok(Rc::new(Object::Integer(arr.elements.borrow().len() as i64)))
+                    }
                     _ => Err(RuntimeError::InvalidArgumentType(Builtin::Len, arg)),
                 }
             }

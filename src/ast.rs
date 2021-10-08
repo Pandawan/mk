@@ -168,14 +168,14 @@ impl Display for InfixExpression {
 
 #[derive(Debug, PartialEq)]
 pub struct AssignmentExpression {
-    // TODO: Add support for assigning array indices, etc. (allow any kind of expression and check at runtime?)
-    pub identifier: IdentifierLiteral,
+    // Expression b/c target can be Identifier, Index, etc.
+    pub target: Expression,
     pub value: Expression,
 }
 
 impl Display for AssignmentExpression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({l} = {r})", l = self.identifier, r = self.value)
+        write!(f, "({l} = {r})", l = self.target, r = self.value)
     }
 }
 

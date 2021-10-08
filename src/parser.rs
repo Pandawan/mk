@@ -9,9 +9,8 @@ use crate::{lexer::Lexer, token::Token};
 pub enum ParseError {
     // TODO: Might want to use TokenKind to allow for Expected(TokenKind, Token)
     Expected(String, Token),
-
     InvalidPrefixFn(Token),
-
+    InvalidAssignmentTarget(Token),
     // Wrapper for LexErrors to bubble up
     SyntaxError(LexError),
 }
@@ -28,6 +27,9 @@ impl Display for ParseError {
             }
             ParseError::InvalidPrefixFn(token) => {
                 write!(f, "No prefix parsing function found for token {}", token)
+            }
+            ParseError::InvalidAssignmentTarget(token) => {
+                write!(f, "Target {} cannot be assigned to", token)
             }
             ParseError::SyntaxError(err) => {
                 write!(f, "Syntax Error: {}", err)
@@ -503,13 +505,13 @@ impl<'a> Parser<'a> {
     fn parse_assignment_expression(parser: &mut Parser<'_>, left: Expression) -> ParseResult<Expression> {
         match left {
             // Left side must be an indentifier
-            Expression::Identifier(identifier) => {
+            Expression::Identifier(_) | Expression::Index(_) => {
                 // Consume = token
                 parser.next_token()?;
 
                 let value = parser.parse_expression(Precedence::Lowest)?;
 
-                Ok(Expression::Assignment(Box::new(AssignmentExpression { identifier, value })))
+                Ok(Expression::Assignment(Box::new(AssignmentExpression { target: left, value })))
             }
 
             _ => Err(ParseError::Expected(

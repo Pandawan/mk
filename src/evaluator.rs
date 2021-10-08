@@ -1,4 +1,4 @@
-use std::{cell::RefCell, convert::TryInto, rc::Rc};
+use std::{borrow::BorrowMut, cell::RefCell, convert::TryInto, rc::Rc};
 
 use crate::{
     ast::{BlockExpression, Expression, IdentifierLiteral, Program, Statement},
@@ -135,22 +135,12 @@ impl Evaluator {
             }
 
             Expression::Assignment(assignment) => {
-                let obj = self.eval_expression(&assignment.value);
+                let value = self.eval_expression(&assignment.value);
                 // Early return the first error received
-                if obj.is_error() {
-                    return obj;
+                if value.is_error() {
+                    return value;
                 }
-
-                // TODO: Make sure that variables stay within their scopes
-                // e.g. `{ let hello = 5; { let hello = 10; } hello }`
-                // This would require changing the BlockExpression to create a new environment
-
-                // Add the variable to the surrounding environment
-                self.env
-                    .borrow_mut()
-                    .set(assignment.identifier.name.to_owned(), obj);
-
-                Rc::new(Object::Nil)
+                self.eval_assignment_expression(&assignment.target, value)
             }
 
             // TODO: Perhaps Block expressions should have their own scope? What about if/for/while/etc.
@@ -167,7 +157,9 @@ impl Evaluator {
                 if elements.len() == 1 && elements.first().unwrap().is_error() {
                     return Rc::clone(elements.first().unwrap());
                 }
-                Rc::new(Object::Array(Array { elements }))
+                Rc::new(Object::Array(Array {
+                    elements: Rc::new(RefCell::new(elements)),
+                }))
             }
             Expression::Index(expr) => {
                 let left = self.eval_expression(&expr.left);
@@ -444,6 +436,53 @@ impl Evaluator {
         }
     }
 
+    fn eval_assignment_expression(&mut self, target: &Expression, value: Rc<Object>) -> Rc<Object> {
+        // TODO: Make sure that variables stay within their scopes
+        // e.g. `{ let hello = 5; { let hello = 10; } hello }`
+        // This would require changing the BlockExpression to create a new environment
+
+        match target {
+            Expression::Identifier(identifier) => {
+                // Add the variable to the surrounding environment
+                self.env
+                    .borrow_mut()
+                    .set(identifier.name.to_owned(), Rc::clone(&value));
+
+                value
+            }
+            Expression::Index(index_expr) => {
+                let obj = self.eval_expression(&index_expr.left);
+
+                match obj.as_ref() {
+                    Object::Array(arr) => {
+                        let index = self.eval_expression(&index_expr.index);
+                        match index.as_ref() {
+                            Object::Integer(i) => {
+                                let length: i64 = arr.elements.borrow().len().try_into().unwrap();
+
+                                let i = match normalize_index(*i, length) {
+                                    Ok(i) => i,
+                                    Err(_) => {
+                                        return Rc::new(Object::Error(
+                                            RuntimeError::IndexOutOfBounds { array: obj, index },
+                                        ))
+                                    }
+                                };
+
+                                arr.elements.as_ref().borrow_mut()[i] = Rc::clone(&value);
+                                value
+                            }
+                            _ => {
+                                Rc::new(Object::Error(RuntimeError::InvalidIndexOperandType(index)))
+                            }
+                        }
+                    }
+                    _ => Rc::new(Object::Error(RuntimeError::IndexNotSupported(obj))),
+                }
+            }
+        }
+    }
+
     fn eval_index_expression(&mut self, left: Rc<Object>, index: Rc<Object>) -> Rc<Object> {
         match left.as_ref() {
             Object::Array(_) => self.eval_array_index_expression(left, index),
@@ -460,23 +499,19 @@ impl Evaluator {
 
         match index.as_ref() {
             Object::Integer(i) => {
-                let length: i64 = arr.elements.len().try_into().unwrap();
+                let length: i64 = arr.elements.borrow().len().try_into().unwrap();
 
-                // Out of bounds
-                if *i <= -length || *i >= length {
-                    return Rc::new(Object::Error(RuntimeError::IndexOutOfBounds {
-                        array,
-                        index,
-                    }));
-                }
-
-                let i = if *i >= 0 {
-                    *i as usize
-                } else {
-                    (length + *i) as usize
+                let i = match normalize_index(*i, length) {
+                    Ok(i) => i,
+                    Err(_) => {
+                        return Rc::new(Object::Error(RuntimeError::IndexOutOfBounds {
+                            array,
+                            index,
+                        }))
+                    }
                 };
 
-                match arr.elements.get(i) {
+                match arr.elements.borrow().get(i) {
                     Some(el) => Rc::clone(el),
                     // TODO: Should this be an error?
                     None => Rc::new(Object::Nil),
@@ -552,6 +587,22 @@ impl Evaluator {
             _ => Rc::new(Object::Error(RuntimeError::NotAFunction(func))),
         }
     }
+}
+
+/// Normalize the given index for indexing operations (e.g. -1 => length - 1)
+fn normalize_index(index: i64, length: i64) -> Result<usize, ()> {
+    // Out of bounds
+    if index <= -length || index >= length {
+        return Err(());
+    }
+
+    let index = if index >= 0 {
+        index as usize
+    } else {
+        (length + index) as usize
+    };
+
+    return Ok(index);
 }
 
 #[cfg(test)]

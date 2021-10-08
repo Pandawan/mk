@@ -90,12 +90,14 @@ impl Display for Object {
 
 #[derive(Debug, PartialEq)]
 pub struct Array {
-    pub elements: Vec<Rc<Object>>,
+    pub elements: Rc<RefCell<Vec<Rc<Object>>>>,
 }
 
 impl Display for Array {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let elements: Vec<String> = (&self.elements)
+            .as_ref()
+            .borrow()
             .iter()
             .map(|e| e.to_string())
             .collect();
