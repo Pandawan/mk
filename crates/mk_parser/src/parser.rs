@@ -2,8 +2,8 @@ use std::fmt::Display;
 use std::rc::Rc;
 
 use crate::ast::{ArrayLiteral, AssignmentExpression, BlockExpression, CallExpression, Expression, FunctionLiteral, IdentifierLiteral, IfExpression, IndexExpression, InfixExpression, PrefixExpression, Program, Statement};
-use crate::lexer::LexError;
-use crate::{lexer::Lexer, token::Token};
+use crate::lexer::{Lexer, LexError};
+use crate::token::Token;
 
 #[derive(Debug)]
 pub enum ParseError {

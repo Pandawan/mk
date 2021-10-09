@@ -1,6 +1,6 @@
 # mk
 
-A simple language made in rust.
+A small, dynamic, strongly-typed language made in Rust.
 
 ## Inspiration
 

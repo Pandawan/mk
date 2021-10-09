@@ -4,10 +4,8 @@ use std::rc::Rc;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 
-use crate::environment::Environment;
-use crate::evaluator::Evaluator;
-use crate::lexer::Lexer;
-use crate::parser::Parser;
+use mk_interpreter::{Environment, Evaluator};
+use mk_parser::{lexer::Lexer, parser::Parser};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 

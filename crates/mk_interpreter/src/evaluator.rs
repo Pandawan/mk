@@ -1,10 +1,13 @@
 use std::{cell::RefCell, convert::TryInto, rc::Rc};
 
 use crate::{
-    ast::{BlockExpression, Expression, IdentifierLiteral, Program, Statement},
     builtin::Builtin,
     environment::Environment,
     object::{Array, Function, Object, RuntimeError},
+};
+
+use mk_parser::{
+    ast::{BlockExpression, Expression, IdentifierLiteral, Program, Statement},
     token::Token,
 };
 
@@ -561,11 +564,10 @@ mod tests {
     use crate::{
         builtin::Builtin,
         evaluator::Evaluator,
-        lexer::Lexer,
         object::{Array, Object, RuntimeError},
-        parser::Parser,
-        token::Token,
     };
+
+    use mk_parser::{lexer::Lexer, parser::Parser, token::Token};
 
     #[test]
     fn eval_integer_expression() {

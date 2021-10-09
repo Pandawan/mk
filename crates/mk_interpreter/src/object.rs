@@ -1,11 +1,11 @@
 use std::{cell::RefCell, fmt::Display, rc::Rc};
 
 use crate::{
-    ast::{BlockExpression, IdentifierLiteral},
     builtin::Builtin,
     environment::Environment,
-    token::Token,
 };
+
+use mk_parser::{ast::{BlockExpression, IdentifierLiteral}, token::Token };
 
 // TODO: Add Range object (to allow for myArr[0..1] AND for i in 0..1)
 #[derive(Debug, PartialEq)]
@@ -53,10 +53,11 @@ impl Object {
     /// Use this anywhere a programmer expects to see the code-version of an object (e.g. in the REPL).
     /// # Examples
     /// ```rust
-    /// let obj = Object::String("hello world");
-    /// let str = String::from("\"hello world\"");
+    /// use mk_interpreter::object::Object;
+    /// 
+    /// let obj = Object::String("hello world".to_string());
     ///
-    /// assert_eq!(str, obj.to_string());
+    /// assert_eq!(obj.to_code_string(), "\"hello world\"");
     /// ```
     pub fn to_code_string(&self) -> String {
         use Object::*;

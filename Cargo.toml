@@ -1,11 +1,7 @@
-[package]
-name = "mk"
-version = "0.1.0"
-authors = ["Miguel <migueltenant@gmail.com>"]
-edition = "2018"
+[workspace]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-rustyline = "8.2.0"
-ryu = "1.0"
+members = [
+    "crates/mk_interpreter",
+    "crates/mk_parser",
+    "crates/mk_repl"
+]
