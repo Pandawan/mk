@@ -221,6 +221,7 @@ pub struct FunctionLiteral {
     /// Parameter identifiers
     pub parameters: Vec<IdentifierLiteral>,
     // TODO: I really don't like having to use Rc for the AST; it should not have to worry about the needs of the interpreter
+    // NOTE: This is done b/c interpreter needs to reference function's body in both Environment AND in apply_function()
     pub body: Rc<BlockExpression>,
 }
 

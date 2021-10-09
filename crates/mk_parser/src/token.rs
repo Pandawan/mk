@@ -132,7 +132,20 @@ impl fmt::Display for Token {
             Return => write!(f, "return"),
 
             Eof => write!(f, "EOF"),
-            // tok => write!(f, "{:?}", tok),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::token::Token;
+
+    #[test]
+    fn float_formatting() {
+        assert_eq!(format!("{}", Token::Float(12345.0)), "12345.0");
+        assert_eq!(format!("{}", Token::Float(1.0)), "1.0");
+        assert_eq!(format!("{}", Token::Float(0.0)), "0.0");
+        assert_eq!(format!("{}", Token::Float(0.1)), "0.1");
+        assert_eq!(format!("{}", Token::Float(0.12345)), "0.12345");
     }
 }

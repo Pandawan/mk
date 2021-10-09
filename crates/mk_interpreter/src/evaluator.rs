@@ -11,6 +11,8 @@ use mk_parser::{
     token::Token,
 };
 
+// TODO: Use Result<> for eval so I can use ? escape
+
 pub struct Evaluator {
     env: Rc<RefCell<Environment>>,
 }

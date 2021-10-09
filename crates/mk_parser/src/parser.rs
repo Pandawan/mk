@@ -36,9 +36,9 @@ impl Display for ParseError {
     }
 }
 
-impl LexError {
-    fn to_parse_error(self) -> ParseError {
-        ParseError::SyntaxError(self)
+impl From<LexError> for ParseError {
+    fn from(error: LexError) -> Self {
+        ParseError::SyntaxError(error)
     }
 }
 
@@ -117,11 +117,12 @@ impl<'a> Parser<'a> {
             Err(err) => return Err(vec![ParseError::SyntaxError(err)]),
         };
 
+        // Loop through tokens, parsing statements until EOF
         while self.current_token != Token::Eof {
             match self.parse_statement() {
                 Ok(statement) => program.statements.push(statement),
                 // Encountering a SyntaxError should exit out immediately
-                Err(ParseError::SyntaxError(err)) => return Err(vec![err.to_parse_error()]),
+                Err(ParseError::SyntaxError(err)) => return Err(vec![err.into()]),
                 Err(error) => errors.push(error),
             }
 
@@ -573,24 +574,16 @@ impl<'a> Parser<'a> {
                 self.peek_token = tok;
                 Ok(())
             }
-            Err(err) => Err(err.to_parse_error()),
+            Err(err) => Err(err.into()),
         }
     }
 
     fn current_token_is(&self, token: Token) -> bool {
-        match (&token, &self.current_token) {
-            (Token::Identifier(_), Token::Identifier(_)) => true,
-            (Token::Integer(_), Token::Integer(_)) => true,
-            _ => token == self.current_token,
-        }
+        return token == self.current_token;
     }
 
     fn peek_token_is(&self, token: &Token) -> bool {
-        match (&token, &self.peek_token) {
-            (Token::Identifier(_), Token::Identifier(_)) => true,
-            (Token::Integer(_), Token::Integer(_)) => true,
-            _ => token == &self.peek_token,
-        }
+        return token == &self.peek_token;
     }
 
     fn current_precedence(&self) -> Precedence {
@@ -601,6 +594,7 @@ impl<'a> Parser<'a> {
         Precedence::token_precedence(&self.peek_token)
     }
 
+    /// Expect the next (peek) token to match the given token
     fn expect_peek(&mut self, token: Token) -> ParseResult<()> {
         if self.peek_token_is(&token) {
             self.next_token()?;
@@ -613,6 +607,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Expect the next (peek) token to be an identifier (get its name if so)
     fn expect_peek_identifier(&mut self) -> ParseResult<String> {
         let name = match &self.peek_token {
             Token::Identifier(name) => name.to_owned(),

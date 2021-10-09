@@ -261,10 +261,12 @@ impl<'a> Lexer<'a> {
     }
 }
 
+/// Whether or not the given character is a digit
 fn is_digit(c: char) -> bool {
     c.is_digit(10)
 }
 
+/// Whether or not the given character is valid in an identifier
 fn is_identifier_char(c: char) -> bool {
     c.is_alphabetic() || c == '_'
 }
