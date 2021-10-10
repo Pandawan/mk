@@ -5,7 +5,7 @@ use crate::{
     environment::Environment,
 };
 
-use mk_parser::{ast::{BlockExpression, IdentifierLiteral}, token::Token };
+use mk_parser::{ast::{BlockExpression, IdentifierLiteral}, span::WithSpan, token::Token};
 
 // TODO: Add Range object (to allow for myArr[0..1] AND for i in 0..1)
 #[derive(Debug, PartialEq)]
@@ -132,12 +132,12 @@ impl PartialEq for Function {
 #[derive(Debug, PartialEq)]
 pub enum RuntimeError {
     /// When attempting a prefix operation on an invalid type (e.g. !int)
-    InvalidPrefixOperandType(Token, Rc<Object>),
+    InvalidPrefixOperandType(WithSpan<Token>, Rc<Object>),
     /// When attempting an infix operation on invalid types/types that are not compatible (e.g. bool + bool, int + bool)
-    InvalidInfixOperandType(Token, Rc<Object>, Rc<Object>),
+    InvalidInfixOperandType(WithSpan<Token>, Rc<Object>, Rc<Object>),
     // When attempting a logical infix (&& or ||) on invalid types/types that are not compatible (e.g. int && bool)
     // NOTE: Second one is Optional because we may have only evaluated the first when the error occurs
-    InvalidLogicalInfixOperandType(Token, Rc<Object>, Option<Rc<Object>>),
+    InvalidLogicalInfixOperandType(WithSpan<Token>, Rc<Object>, Option<Rc<Object>>),
     /// When expecting a boolean conditional expression (e.g. if 1)
     ExpectedBooleanCondition(Rc<Object>),
     /// When referencing an identifier that does not exist/has not been defined
@@ -169,40 +169,48 @@ impl Display for RuntimeError {
         match self {
             InvalidPrefixOperandType(operator, right) => write!(
                 f,
-                "unsupported operand type for {} operator: `{}` ({})",
-                operator,
+                "unsupported operand type for {} operator: `{}` ({}) {}",
+                operator.value,
                 right.typename(),
                 right,
+                // TODO: Somehow get the span of the right object/expression instead?
+                operator.span.at_str()
             ),
             // TODO: Better error messages like "cannot add `bool` and `bool`"
             InvalidInfixOperandType(operator, left, right) => write!(
                 f,
-                "unsupported operand type(s) for {} operator: `{}` ({}) and `{}` ({})",
-                operator,
+                "unsupported operand type(s) for {} operator: `{}` ({}) and `{}` ({}) {}",
+                operator.value,
                 left.typename(),
                 left,
                 right.typename(),
-                right
+                right,
+                // TODO: Somehow get the span of the objects/expressions instead?
+                operator.span.at_str()
             ),
             InvalidLogicalInfixOperandType(operator, left, right) => {
                 if let Some(right_obj) = right {
                     write!(
                         f,
-                        "unsupported operand type(s) for logical {} operator: `{}` ({}) and `{}` ({})", 
-                        operator, 
+                        "unsupported operand type(s) for logical {} operator: `{}` ({}) and `{}` ({}) {}", 
+                        operator.value, 
                         left.typename(),
                         left,
                         right_obj.typename(), 
-                        right_obj
+                        right_obj,
+                        // TODO: Somehow get the span of the objects/expressions instead?
+                        operator.span.at_str()
                     )
                 }
                 else {
                     write!(
                         f, 
-                        "unsupported operand type for logical {} operator: `{}` ({})",
-                        operator, 
+                        "unsupported operand type for logical {} operator: `{}` ({}) {}",
+                        operator.value, 
                         left.typename(),
-                        left
+                        left,
+                        // TODO: Somehow get the span of the right object/expression instead?
+                        operator.span.at_str()
                     )
                 }
             }

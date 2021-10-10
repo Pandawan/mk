@@ -1,4 +1,4 @@
-use std::fmt;
+use std::fmt::{self, Display};
 
 // TODO: Add some kind of Span to keep track of where each token is in the source (Perhaps a WithSpan<>)
 #[derive(Debug, PartialEq, Clone)]
@@ -74,7 +74,7 @@ impl Token {
     }
 }
 
-impl fmt::Display for Token {
+impl Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Token::*;
 

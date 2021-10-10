@@ -8,6 +8,7 @@ use crate::{
 
 use mk_parser::{
     ast::{BlockExpression, Expression, IdentifierLiteral, Program, Statement},
+    span::WithSpan,
     token::Token,
 };
 
@@ -118,7 +119,7 @@ impl Evaluator {
             Expression::Infix(infix) => {
                 // TODO: I don't like this special-casing & hardcoding...
                 // Short circuiting operators have a different handler
-                if infix.operator == Token::AndAnd || infix.operator == Token::OrOr {
+                if infix.operator.value == Token::AndAnd || infix.operator.value == Token::OrOr {
                     return self.eval_infix_expression_with_short_circuiting(
                         &infix.operator,
                         &infix.left,
@@ -236,32 +237,45 @@ impl Evaluator {
         }
     }
 
-    fn eval_prefix_expression(&self, operator: &Token, right: Rc<Object>) -> Rc<Object> {
-        match operator {
-            Token::Bang => self.eval_bang_operator_expression(right),
-            Token::Minus => self.eval_minus_prefix_operator_expression(right),
+    fn eval_prefix_expression(&self, operator: &WithSpan<Token>, right: Rc<Object>) -> Rc<Object> {
+        match operator.value {
+            Token::Bang => self.eval_bang_operator_expression(operator, right),
+            Token::Minus => self.eval_minus_prefix_operator_expression(operator, right),
             // NOTE: Evaluator incorrectly asked to evaluate given operator as a prefix
-            _ => panic!("unknown prefix operator {}{:?}", operator, right),
+            _ => panic!(
+                "unknown prefix operator {op}{r:?} {at}",
+                op = operator.value,
+                r = right,
+                at = operator.span.at_str()
+            ),
         }
     }
 
-    fn eval_bang_operator_expression(&self, right: Rc<Object>) -> Rc<Object> {
+    fn eval_bang_operator_expression(
+        &self,
+        operator: &WithSpan<Token>,
+        right: Rc<Object>,
+    ) -> Rc<Object> {
         match *right {
             Object::Boolean(true) => Rc::new(Object::Boolean(false)),
             Object::Boolean(false) => Rc::new(Object::Boolean(true)),
             _ => Rc::new(Object::Error(RuntimeError::InvalidPrefixOperandType(
-                Token::Bang,
+                operator.clone(),
                 right,
             ))),
         }
     }
 
-    fn eval_minus_prefix_operator_expression(&self, right: Rc<Object>) -> Rc<Object> {
+    fn eval_minus_prefix_operator_expression(
+        &self,
+        operator: &WithSpan<Token>,
+        right: Rc<Object>,
+    ) -> Rc<Object> {
         match *right {
             Object::Integer(value) => Rc::new(Object::Integer(-value)),
             Object::Float(value) => Rc::new(Object::Float(-value)),
             _ => Rc::new(Object::Error(RuntimeError::InvalidPrefixOperandType(
-                Token::Minus,
+                operator.clone(),
                 right,
             ))),
         }
@@ -269,18 +283,18 @@ impl Evaluator {
 
     fn eval_infix_expression_with_short_circuiting(
         &mut self,
-        operator: &Token,
+        operator: &WithSpan<Token>,
         left_expr: &Expression,
         right_expr: &Expression,
     ) -> Rc<Object> {
-        if *operator != Token::AndAnd && *operator != Token::OrOr {
+        if operator.value != Token::AndAnd && operator.value != Token::OrOr {
             panic!("Only && and || operators can short circuit!")
         };
 
         let left = self.eval_expression(left_expr);
 
         // At this point, know operator can short circuit
-        match (left.as_ref(), operator) {
+        match (left.as_ref(), &operator.value) {
             // Short-circuiting cases
             // false && <>
             (Object::Boolean(false), Token::AndAnd) => Rc::new(Object::Boolean(false)),
@@ -314,7 +328,7 @@ impl Evaluator {
 
     fn eval_infix_expression(
         &self,
-        operator: &Token,
+        operator: &WithSpan<Token>,
         left: Rc<Object>,
         right: Rc<Object>,
     ) -> Rc<Object> {
@@ -352,11 +366,11 @@ impl Evaluator {
 
     fn eval_integer_infix_expression(
         &self,
-        operator: &Token,
+        operator: &WithSpan<Token>,
         left_value: i64,
         right_value: i64,
     ) -> Rc<Object> {
-        match operator {
+        match operator.value {
             Token::Plus => Rc::new(Object::Integer(left_value + right_value)),
             Token::Minus => Rc::new(Object::Integer(left_value - right_value)),
             Token::Star => Rc::new(Object::Integer(left_value * right_value)),
@@ -369,7 +383,7 @@ impl Evaluator {
             Token::EqualEqual => Rc::new(Object::Boolean(left_value == right_value)),
             Token::BangEqual => Rc::new(Object::Boolean(left_value != right_value)),
 
-            operator => Rc::new(Object::Error(RuntimeError::InvalidInfixOperandType(
+            _ => Rc::new(Object::Error(RuntimeError::InvalidInfixOperandType(
                 operator.clone(),
                 // TODO: Find a way to keep using the previous Object::Integer rather than creating a new one
                 Rc::new(Object::Integer(left_value)),
@@ -380,11 +394,11 @@ impl Evaluator {
 
     fn eval_float_infix_expression(
         &self,
-        operator: &Token,
+        operator: &WithSpan<Token>,
         left_value: f64,
         right_value: f64,
     ) -> Rc<Object> {
-        match operator {
+        match operator.value {
             Token::Plus => Rc::new(Object::Float(left_value + right_value)),
             Token::Minus => Rc::new(Object::Float(left_value - right_value)),
             Token::Star => Rc::new(Object::Float(left_value * right_value)),
@@ -397,7 +411,7 @@ impl Evaluator {
             Token::EqualEqual => Rc::new(Object::Boolean(left_value == right_value)),
             Token::BangEqual => Rc::new(Object::Boolean(left_value != right_value)),
 
-            operator => Rc::new(Object::Error(RuntimeError::InvalidInfixOperandType(
+            _ => Rc::new(Object::Error(RuntimeError::InvalidInfixOperandType(
                 operator.clone(),
                 // TODO: Find a way to keep using the previous Object::Integer rather than creating a new one
                 Rc::new(Object::Float(left_value)),
@@ -408,11 +422,11 @@ impl Evaluator {
 
     fn eval_boolean_infix_expression(
         &self,
-        operator: &Token,
+        operator: &WithSpan<Token>,
         left_value: bool,
         right_value: bool,
     ) -> Rc<Object> {
-        match operator {
+        match operator.value {
             // NOTE: No truthy/implicit conversion
             Token::EqualEqual => Rc::new(Object::Boolean(left_value == right_value)),
             Token::BangEqual => Rc::new(Object::Boolean(left_value != right_value)),
@@ -420,7 +434,7 @@ impl Evaluator {
             Token::AndAnd => Rc::new(Object::Boolean(left_value && right_value)),
             Token::OrOr => Rc::new(Object::Boolean(left_value || right_value)),
 
-            operator => Rc::new(Object::Error(RuntimeError::InvalidInfixOperandType(
+            _ => Rc::new(Object::Error(RuntimeError::InvalidInfixOperandType(
                 operator.clone(),
                 // TODO: Find a way to keep using the previous Object::Boolean rather than creating a new one
                 Rc::new(Object::Boolean(left_value)),
@@ -431,16 +445,16 @@ impl Evaluator {
 
     fn eval_string_infix_expression(
         &self,
-        operator: &Token,
+        operator: &WithSpan<Token>,
         left_value: &str,
         right_value: &str,
     ) -> Rc<Object> {
-        match operator {
+        match operator.value {
             Token::Plus => Rc::new(Object::String(left_value.to_owned() + right_value)),
             Token::EqualEqual => Rc::new(Object::Boolean(left_value == right_value)),
             Token::BangEqual => Rc::new(Object::Boolean(left_value != right_value)),
 
-            operator => Rc::new(Object::Error(RuntimeError::InvalidInfixOperandType(
+            _ => Rc::new(Object::Error(RuntimeError::InvalidInfixOperandType(
                 operator.clone(),
                 // TODO: Find a way to keep using the previous Object::String rather than creating a new one
                 Rc::new(Object::String(left_value.to_owned())),
@@ -569,7 +583,12 @@ mod tests {
         object::{Array, Object, RuntimeError},
     };
 
-    use mk_parser::{lexer::Lexer, parser::Parser, token::Token};
+    use mk_parser::{
+        lexer::Lexer,
+        parser::Parser,
+        span::{BytePos, Span, WithSpan},
+        token::Token,
+    };
 
     #[test]
     fn eval_integer_expression() {
@@ -960,7 +979,7 @@ mod tests {
             (
                 "5 + true;",
                 RuntimeError::InvalidInfixOperandType(
-                    Token::Plus,
+                    WithSpan::new(Token::Plus, Span::new(BytePos::new(2), BytePos::new(3))),
                     Rc::new(Object::Integer(5)),
                     Rc::new(Object::Boolean(true)),
                 ),
@@ -968,7 +987,7 @@ mod tests {
             (
                 "5 + true; 5;",
                 RuntimeError::InvalidInfixOperandType(
-                    Token::Plus,
+                    WithSpan::new(Token::Plus, Span::new(BytePos::new(2), BytePos::new(3))),
                     Rc::new(Object::Integer(5)),
                     Rc::new(Object::Boolean(true)),
                 ),
@@ -976,14 +995,14 @@ mod tests {
             (
                 "-true",
                 RuntimeError::InvalidPrefixOperandType(
-                    Token::Minus,
+                    WithSpan::new(Token::Minus, Span::new(BytePos::new(0), BytePos::new(1))),
                     Rc::new(Object::Boolean(true)),
                 ),
             ),
             (
                 "true + false;",
                 RuntimeError::InvalidInfixOperandType(
-                    Token::Plus,
+                    WithSpan::new(Token::Plus, Span::new(BytePos::new(5), BytePos::new(6))),
                     Rc::new(Object::Boolean(true)),
                     Rc::new(Object::Boolean(false)),
                 ),
@@ -991,7 +1010,7 @@ mod tests {
             (
                 "\"hello\" - \"world\";",
                 RuntimeError::InvalidInfixOperandType(
-                    Token::Minus,
+                    WithSpan::new(Token::Minus, Span::new(BytePos::new(8), BytePos::new(9))),
                     Rc::new(Object::String("hello".to_string())),
                     Rc::new(Object::String("world".to_string())),
                 ),
@@ -999,7 +1018,7 @@ mod tests {
             (
                 "5; true + false; 5",
                 RuntimeError::InvalidInfixOperandType(
-                    Token::Plus,
+                    WithSpan::new(Token::Plus, Span::new(BytePos::new(8), BytePos::new(9))),
                     Rc::new(Object::Boolean(true)),
                     Rc::new(Object::Boolean(false)),
                 ),
@@ -1007,7 +1026,7 @@ mod tests {
             (
                 "if 10 > 1 { true + false; }",
                 RuntimeError::InvalidInfixOperandType(
-                    Token::Plus,
+                    WithSpan::new(Token::Plus, Span::new(BytePos::new(17), BytePos::new(18))),
                     Rc::new(Object::Boolean(true)),
                     Rc::new(Object::Boolean(false)),
                 ),
@@ -1026,7 +1045,7 @@ mod tests {
                 }
                 ",
                 RuntimeError::InvalidInfixOperandType(
-                    Token::Plus,
+                    WithSpan::new(Token::Plus, Span::new(BytePos::new(95), BytePos::new(96))),
                     Rc::new(Object::Boolean(true)),
                     Rc::new(Object::Boolean(false)),
                 ),

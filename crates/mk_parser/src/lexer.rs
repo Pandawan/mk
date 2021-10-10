@@ -3,6 +3,7 @@ use std::iter::Peekable;
 use std::num::{ParseFloatError, ParseIntError};
 use std::str::Chars;
 
+use crate::span::{BytePos, Span, WithSpan};
 use crate::token::Token;
 
 #[derive(Debug)]
@@ -34,18 +35,24 @@ type LexResult<T> = Result<T, LexError>;
 
 pub struct Lexer<'a> {
     input_iter: Peekable<Chars<'a>>,
+    current_position: BytePos,
 }
 
 impl<'a> Lexer<'a> {
     pub fn new(input: &'a str) -> Lexer<'a> {
         Lexer {
             input_iter: input.chars().peekable(),
+            current_position: BytePos::new(0),
         }
     }
 
     /// Consume the next character from the list.
     fn read_char(&mut self) -> Option<char> {
-        self.input_iter.next()
+        let next = self.input_iter.next();
+        if let Some(c) = next {
+            self.current_position = self.current_position.shift(c);
+        }
+        next
     }
 
     /// Get the next character from the list without consuming it.
@@ -169,95 +176,101 @@ impl<'a> Lexer<'a> {
     }
 
     /// Read a new token from the characters list.
-    pub fn next_token(&mut self) -> LexResult<Token> {
+    pub fn next_token(&mut self) -> LexResult<WithSpan<Token>> {
         self.skip_whitespace();
 
-        if let Some(c) = self.read_char() {
+        let initial_position = self.current_position;
+
+        let token = if let Some(c) = self.read_char() {
             match c {
-                '+' => Ok(Token::Plus),
-                '-' => Ok(Token::Minus),
+                '+' => Token::Plus,
+                '-' => Token::Minus,
                 '*' => match self.peek_char() {
                     // Double star
                     Some('*') => {
                         self.read_char();
-                        Ok(Token::StarStar)
+                        Token::StarStar
                     }
-                    _ => Ok(Token::Star),
+                    _ => Token::Star,
                 },
-                '/' => Ok(Token::Slash),
+                '/' => Token::Slash,
 
                 '=' => match self.peek_char() {
                     // Double equal
                     Some('=') => {
                         self.read_char();
-                        Ok(Token::EqualEqual)
+                        Token::EqualEqual
                     }
-                    _ => Ok(Token::Equal),
+                    _ => Token::Equal,
                 },
                 '!' => match self.peek_char() {
                     // Double equal
                     Some('=') => {
                         self.read_char();
-                        Ok(Token::BangEqual)
+                        Token::BangEqual
                     }
-                    _ => Ok(Token::Bang),
+                    _ => Token::Bang,
                 },
                 '<' => match self.peek_char() {
                     // Double equal
                     Some('=') => {
                         self.read_char();
-                        Ok(Token::LessEqual)
+                        Token::LessEqual
                     }
-                    _ => Ok(Token::LessThan),
+                    _ => Token::LessThan,
                 },
                 '>' => match self.peek_char() {
                     // Double equal
                     Some('=') => {
                         self.read_char();
-                        Ok(Token::GreaterEqual)
+                        Token::GreaterEqual
                     }
-                    _ => Ok(Token::GreaterThan),
+                    _ => Token::GreaterThan,
                 },
 
-                ',' => Ok(Token::Comma),
-                '.' => Ok(Token::Dot),
-                ';' => Ok(Token::Semicolon),
-                ':' => Ok(Token::Colon),
+                ',' => Token::Comma,
+                '.' => Token::Dot,
+                ';' => Token::Semicolon,
+                ':' => Token::Colon,
 
-                '(' => Ok(Token::LeftParen),
-                ')' => Ok(Token::RightParen),
-                '{' => Ok(Token::LeftBrace),
-                '}' => Ok(Token::RightBrace),
-                '[' => Ok(Token::LeftBracket),
-                ']' => Ok(Token::RightBracket),
+                '(' => Token::LeftParen,
+                ')' => Token::RightParen,
+                '{' => Token::LeftBrace,
+                '}' => Token::RightBrace,
+                '[' => Token::LeftBracket,
+                ']' => Token::RightBracket,
 
                 '&' => match self.peek_char() {
                     // AndAnd: &&
                     Some('&') => {
                         self.read_char();
-                        Ok(Token::AndAnd)
+                        Token::AndAnd
                     }
-                    _ => Err(LexError::UnexpectedToken(c)),
+                    _ => return Err(LexError::UnexpectedToken(c)),
                 },
                 '|' => match self.peek_char() {
                     // OrOr: ||
                     Some('|') => {
                         self.read_char();
-                        Ok(Token::OrOr)
+                        Token::OrOr
                     }
-                    _ => Err(LexError::UnexpectedToken(c)),
+                    _ => return Err(LexError::UnexpectedToken(c)),
                 },
 
-                '"' | '\'' => self.read_string(c),
+                '"' | '\'' => self.read_string(c)?,
 
-                c if is_digit(c) => self.read_number(c),
-                c if is_identifier_char(c) => self.read_identifier_or_keyword(c),
+                c if is_digit(c) => self.read_number(c)?,
+                c if is_identifier_char(c) => self.read_identifier_or_keyword(c)?,
 
-                _ => Err(LexError::UnexpectedToken(c)),
+                _ => return Err(LexError::UnexpectedToken(c)),
             }
         } else {
-            Ok(Token::Eof)
-        }
+            Token::Eof
+        };
+
+        let span = Span::new(initial_position, self.current_position);
+
+        Ok(WithSpan::new(token, span))
     }
 }
 
@@ -274,6 +287,7 @@ fn is_identifier_char(c: char) -> bool {
 #[cfg(test)]
 mod tests {
     use crate::lexer::{LexError, Lexer};
+    use crate::span::{BytePos, Span};
     use crate::token::Token;
 
     #[test]
@@ -281,23 +295,23 @@ mod tests {
         let input = "+-*/=! **==!=<><=>= && ||";
         let mut lex = Lexer::new(input);
 
-        assert_eq!(lex.next_token().unwrap(), Token::Plus);
-        assert_eq!(lex.next_token().unwrap(), Token::Minus);
-        assert_eq!(lex.next_token().unwrap(), Token::Star);
-        assert_eq!(lex.next_token().unwrap(), Token::Slash);
-        assert_eq!(lex.next_token().unwrap(), Token::Equal);
-        assert_eq!(lex.next_token().unwrap(), Token::Bang);
-        assert_eq!(lex.next_token().unwrap(), Token::StarStar);
+        assert_eq!(lex.next_token().unwrap().value, Token::Plus);
+        assert_eq!(lex.next_token().unwrap().value, Token::Minus);
+        assert_eq!(lex.next_token().unwrap().value, Token::Star);
+        assert_eq!(lex.next_token().unwrap().value, Token::Slash);
+        assert_eq!(lex.next_token().unwrap().value, Token::Equal);
+        assert_eq!(lex.next_token().unwrap().value, Token::Bang);
+        assert_eq!(lex.next_token().unwrap().value, Token::StarStar);
 
-        assert_eq!(lex.next_token().unwrap(), Token::EqualEqual);
-        assert_eq!(lex.next_token().unwrap(), Token::BangEqual);
-        assert_eq!(lex.next_token().unwrap(), Token::LessThan);
-        assert_eq!(lex.next_token().unwrap(), Token::GreaterThan);
-        assert_eq!(lex.next_token().unwrap(), Token::LessEqual);
-        assert_eq!(lex.next_token().unwrap(), Token::GreaterEqual);
+        assert_eq!(lex.next_token().unwrap().value, Token::EqualEqual);
+        assert_eq!(lex.next_token().unwrap().value, Token::BangEqual);
+        assert_eq!(lex.next_token().unwrap().value, Token::LessThan);
+        assert_eq!(lex.next_token().unwrap().value, Token::GreaterThan);
+        assert_eq!(lex.next_token().unwrap().value, Token::LessEqual);
+        assert_eq!(lex.next_token().unwrap().value, Token::GreaterEqual);
 
-        assert_eq!(lex.next_token().unwrap(), Token::AndAnd);
-        assert_eq!(lex.next_token().unwrap(), Token::OrOr);
+        assert_eq!(lex.next_token().unwrap().value, Token::AndAnd);
+        assert_eq!(lex.next_token().unwrap().value, Token::OrOr);
     }
 
     #[test]
@@ -305,17 +319,17 @@ mod tests {
         let input = ",.;:(){}[]";
         let mut lex = Lexer::new(input);
 
-        assert_eq!(lex.next_token().unwrap(), Token::Comma);
-        assert_eq!(lex.next_token().unwrap(), Token::Dot);
-        assert_eq!(lex.next_token().unwrap(), Token::Semicolon);
-        assert_eq!(lex.next_token().unwrap(), Token::Colon);
+        assert_eq!(lex.next_token().unwrap().value, Token::Comma);
+        assert_eq!(lex.next_token().unwrap().value, Token::Dot);
+        assert_eq!(lex.next_token().unwrap().value, Token::Semicolon);
+        assert_eq!(lex.next_token().unwrap().value, Token::Colon);
 
-        assert_eq!(lex.next_token().unwrap(), Token::LeftParen);
-        assert_eq!(lex.next_token().unwrap(), Token::RightParen);
-        assert_eq!(lex.next_token().unwrap(), Token::LeftBrace);
-        assert_eq!(lex.next_token().unwrap(), Token::RightBrace);
-        assert_eq!(lex.next_token().unwrap(), Token::LeftBracket);
-        assert_eq!(lex.next_token().unwrap(), Token::RightBracket);
+        assert_eq!(lex.next_token().unwrap().value, Token::LeftParen);
+        assert_eq!(lex.next_token().unwrap().value, Token::RightParen);
+        assert_eq!(lex.next_token().unwrap().value, Token::LeftBrace);
+        assert_eq!(lex.next_token().unwrap().value, Token::RightBrace);
+        assert_eq!(lex.next_token().unwrap().value, Token::LeftBracket);
+        assert_eq!(lex.next_token().unwrap().value, Token::RightBracket);
     }
 
     #[test]
@@ -323,15 +337,15 @@ mod tests {
         let input = "hello _world _hello_world_";
         let mut lex = Lexer::new(input);
         assert_eq!(
-            lex.next_token().unwrap(),
+            lex.next_token().unwrap().value,
             Token::Identifier("hello".to_owned())
         );
         assert_eq!(
-            lex.next_token().unwrap(),
+            lex.next_token().unwrap().value,
             Token::Identifier("_world".to_owned())
         );
         assert_eq!(
-            lex.next_token().unwrap(),
+            lex.next_token().unwrap().value,
             Token::Identifier("_hello_world_".to_owned())
         );
     }
@@ -340,16 +354,16 @@ mod tests {
     fn test_integer() {
         let input = "012312 12_345";
         let mut lex = Lexer::new(input);
-        assert_eq!(lex.next_token().unwrap(), Token::Integer(12312));
-        assert_eq!(lex.next_token().unwrap(), Token::Integer(12345));
+        assert_eq!(lex.next_token().unwrap().value, Token::Integer(12312));
+        assert_eq!(lex.next_token().unwrap().value, Token::Integer(12345));
     }
 
     #[test]
     fn test_float() {
         let input = "012312.321 123_45.6_7";
         let mut lex = Lexer::new(input);
-        assert_eq!(lex.next_token().unwrap(), Token::Float(12312.321));
-        assert_eq!(lex.next_token().unwrap(), Token::Float(12345.67));
+        assert_eq!(lex.next_token().unwrap().value, Token::Float(12312.321));
+        assert_eq!(lex.next_token().unwrap().value, Token::Float(12345.67));
     }
 
     #[test]
@@ -357,11 +371,11 @@ mod tests {
         let input = "\"foobar\" \'foo bar\' \"not closed";
         let mut lex = Lexer::new(input);
         assert_eq!(
-            lex.next_token().unwrap(),
+            lex.next_token().unwrap().value,
             Token::String("foobar".to_string())
         );
         assert_eq!(
-            lex.next_token().unwrap(),
+            lex.next_token().unwrap().value,
             Token::String("foo bar".to_string())
         );
 
@@ -378,19 +392,61 @@ mod tests {
     fn test_keywords() {
         let input = "true false fn let if else return";
         let mut lex = Lexer::new(input);
-        assert_eq!(lex.next_token().unwrap(), Token::True);
-        assert_eq!(lex.next_token().unwrap(), Token::False);
-        assert_eq!(lex.next_token().unwrap(), Token::Fn);
-        assert_eq!(lex.next_token().unwrap(), Token::Let);
-        assert_eq!(lex.next_token().unwrap(), Token::If);
-        assert_eq!(lex.next_token().unwrap(), Token::Else);
-        assert_eq!(lex.next_token().unwrap(), Token::Return);
+
+        assert_eq!(lex.next_token().unwrap().value, Token::True);
+        assert_eq!(lex.next_token().unwrap().value, Token::False);
+        assert_eq!(lex.next_token().unwrap().value, Token::Fn);
+        assert_eq!(lex.next_token().unwrap().value, Token::Let);
+        assert_eq!(lex.next_token().unwrap().value, Token::If);
+        assert_eq!(lex.next_token().unwrap().value, Token::Else);
+        assert_eq!(lex.next_token().unwrap().value, Token::Return);
     }
 
     #[test]
     fn test_eof() {
         let input = "";
         let mut lex = Lexer::new(input);
-        assert_eq!(lex.next_token().unwrap(), Token::Eof)
+        assert_eq!(lex.next_token().unwrap().value, Token::Eof)
+    }
+
+    #[test]
+    fn test_spans_eof() {
+        let input = "1";
+        let mut lex = Lexer::new(input);
+
+        // Skip the `1`
+        lex.next_token().unwrap();
+
+        let final_span = Span::new(BytePos::new(1), BytePos::new(1));
+        // Make sure that the span does not change upon hitting eof
+        assert_eq!(lex.next_token().unwrap().span, final_span);
+        // Make sure that the span does not change upon hitting eof
+        assert_eq!(
+            lex.next_token().unwrap().span,
+            Span::new(BytePos::new(1), BytePos::new(1))
+        );
+    }
+
+    #[test]
+    fn test_spans() {
+        let input = "abc 12 + return";
+        let mut lex = Lexer::new(input);
+
+        assert_eq!(
+            lex.next_token().unwrap().span,
+            Span::new(BytePos::new(0), BytePos::new(3))
+        );
+        assert_eq!(
+            lex.next_token().unwrap().span,
+            Span::new(BytePos::new(4), BytePos::new(6))
+        );
+        assert_eq!(
+            lex.next_token().unwrap().span,
+            Span::new(BytePos::new(7), BytePos::new(8))
+        );
+        assert_eq!(
+            lex.next_token().unwrap().span,
+            Span::new(BytePos::new(9), BytePos::new(15))
+        );
     }
 }
