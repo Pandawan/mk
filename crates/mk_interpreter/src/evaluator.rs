@@ -46,7 +46,21 @@ impl Evaluator {
     }
 
     // Similar to eval (for programs) but doesn't unwrap return values
-    fn eval_block_expression(&mut self, block: &BlockExpression) -> Rc<Object> {
+    fn eval_block_expression(
+        &mut self,
+        block: &BlockExpression,
+        with_premade_env: Option<Rc<RefCell<Environment>>>,
+    ) -> Rc<Object> {
+        // Open new block scope
+        let outer_env = Rc::clone(&self.env);
+        let inner_env = match with_premade_env {
+            Some(env) => env,
+            None => Rc::new(RefCell::new(Environment::new_enclosed(Rc::clone(
+                &self.env,
+            )))),
+        };
+        self.env = inner_env;
+
         let mut result = Rc::new(Object::Nil);
 
         for stmt in &block.statements {
@@ -60,6 +74,9 @@ impl Evaluator {
                 _ => result = val,
             }
         }
+
+        // Exit block scope
+        self.env = outer_env;
 
         result
     }
@@ -84,13 +101,10 @@ impl Evaluator {
                     return obj;
                 }
 
-                // TODO: Make sure that variables stay within their scopes
-                // e.g. `{ let hello = 5; { let hello = 10; } hello }`
-                // This would require changing the BlockExpression to create a new environment
-
                 // Add the variable to the surrounding environment
-                self.env.borrow_mut().set(name.to_owned(), obj);
+                self.env.borrow_mut().define(name.to_owned(), obj);
 
+                // TODO: Let returns nil, but it's a statement so maybe it shouldn't return anything? How should that work?
                 Rc::new(Object::Nil)
             }
         }
@@ -147,20 +161,20 @@ impl Evaluator {
                     return obj;
                 }
 
-                // TODO: Make sure that variables stay within their scopes
-                // e.g. `{ let hello = 5; { let hello = 10; } hello }`
-                // This would require changing the BlockExpression to create a new environment
-
                 // Add the variable to the surrounding environment
-                self.env
+                let result = self
+                    .env
                     .borrow_mut()
-                    .set(assignment.identifier.name.to_owned(), obj);
+                    .assign(assignment.identifier.name.to_owned(), Rc::clone(&obj));
 
-                Rc::new(Object::Nil)
+                match result {
+                    // Assignment expression returns the value that was just assigned
+                    Ok(_) => obj,
+                    Err(err) => Rc::new(Object::Error(err)),
+                }
             }
 
-            // TODO: Perhaps Block expressions should have their own scope? What about if/for/while/etc.
-            Expression::Block(block) => self.eval_block_expression(block),
+            Expression::Block(block) => self.eval_block_expression(block, None),
 
             Expression::If(if_expr) => self.eval_if_expression(
                 &if_expr.condition,
@@ -520,7 +534,7 @@ impl Evaluator {
         match *evaluated_condition {
             Object::Boolean(value) => {
                 if value {
-                    self.eval_block_expression(consequence)
+                    self.eval_block_expression(consequence, None)
                 } else if let Some(alternative) = alternative {
                     self.eval_expression(alternative)
                 } else {
@@ -544,22 +558,18 @@ impl Evaluator {
                     }));
                 }
 
-                // Remember current environment (when exiting from call)
-                let current_env = Rc::clone(&self.env);
                 // Create a new scoped environment for function
                 let mut scoped_env = Environment::new_enclosed(Rc::clone(&func.env));
 
                 // Add arguments as variables in function's environment
                 for (ident, obj) in func.parameters.iter().zip(args.iter()) {
-                    scoped_env.set(ident.name.clone(), Rc::clone(obj));
+                    scoped_env.define(ident.name.clone(), Rc::clone(obj));
                 }
 
-                self.env = Rc::new(RefCell::new(scoped_env));
-
-                // Actually evaulate the function
-                let result = self.eval_block_expression(&func.body);
-
-                self.env = current_env;
+                // Actually evaluate the function
+                // NOTE: No need to set/unset environment, this is done by eval_block_expression using `with_premade_env`
+                let result =
+                    self.eval_block_expression(&func.body, Some(Rc::new(RefCell::new(scoped_env))));
 
                 result
             }
@@ -775,7 +785,7 @@ mod tests {
 
             match expected_obj {
                 Object::Integer(expected_value) => test_integer_object(evaluated, expected_value),
-                Object::Nil => test_null_object(evaluated),
+                Object::Nil => test_nil_object(evaluated),
                 _ => panic!("expected integer or nil but got {}", expected_obj),
             }
         }
@@ -866,6 +876,53 @@ mod tests {
         for (input, expected_value) in tests {
             let evaluated = evaluate(input);
             test_integer_object(evaluated, expected_value)
+        }
+    }
+
+    #[test]
+    fn eval_block_expression() {
+        let tests = vec![
+            // Return value
+            ("{ }", Object::Nil),
+            ("{ 6 }", Object::Integer(6)),
+            ("{ 6; 7 }", Object::Integer(7)),
+        ];
+
+        for (input, expected_value) in tests {
+            let evaluated = evaluate(input);
+
+            match expected_value {
+                Object::Integer(expected_value) => test_integer_object(evaluated, expected_value),
+                Object::Nil => test_nil_object(evaluated),
+                _ => unimplemented!(),
+            }
+        }
+    }
+
+    #[test]
+    fn eval_scoping() {
+        let tests = vec![
+            // If
+            ("let x = 5; if true { x = 6; }; x", Object::Integer(6)),
+            ("let x = 5; if true { let x = 6; }; x", Object::Integer(5)),
+            // Block
+            ("let x = 5; { x = 6; }; x", Object::Integer(6)),
+            ("let x = 5; { let x = 6; }; x", Object::Integer(5)),
+            // Function
+            ("let x = 5; (fn() { x = 6; })(); x", Object::Integer(6)),
+            ("let x = 5; (fn(){ let x = 6; })(); x", Object::Integer(5)),
+            ("let x = 5; (fn(x){ x = 10; x })(x)", Object::Integer(10)),
+            ("let x = 5; (fn(x){ x = 10; })(x); x", Object::Integer(5)),
+        ];
+
+        for (input, expected_value) in tests {
+            let evaluated = evaluate(input);
+
+            match expected_value {
+                Object::Integer(expected_value) => test_integer_object(evaluated, expected_value),
+                Object::Nil => test_nil_object(evaluated),
+                _ => unimplemented!(),
+            }
         }
     }
 
@@ -1052,6 +1109,10 @@ mod tests {
             ),
             ("foobar", RuntimeError::IdentifierNotFound("foobar".into())),
             (
+                "foobar = 5",
+                RuntimeError::IdentifierNotFound("foobar".into()),
+            ),
+            (
                 "[0, 1, 2][3]",
                 RuntimeError::IndexOutOfBounds {
                     array: Rc::new(Object::Array(Array {
@@ -1145,7 +1206,7 @@ mod tests {
         }
     }
 
-    fn test_null_object(obj: Rc<Object>) {
+    fn test_nil_object(obj: Rc<Object>) {
         match *obj {
             Object::Nil => {}
             _ => panic!("expected null object but got {:?}", obj),

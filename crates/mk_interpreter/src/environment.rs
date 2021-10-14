@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::object::Object;
+use crate::object::{Object, RuntimeError};
 
 #[derive(Debug, Clone)]
 pub struct Environment {
@@ -36,8 +36,20 @@ impl Environment {
         }
     }
 
-    pub fn set(&mut self, name: String, value: Rc<Object>) {
+    pub fn define(&mut self, name: String, value: Rc<Object>) {
         self.store.insert(name, value);
+    }
+
+    pub fn assign(&mut self, name: String, value: Rc<Object>) -> Result<(), RuntimeError> {
+        if self.store.contains_key(&name) {
+            self.store.insert(name, value);
+            Ok(())
+        } else {
+            match self.outer {
+                Some(ref outer) => outer.borrow_mut().assign(name, value),
+                None => Err(RuntimeError::IdentifierNotFound(name)),
+            }
+        }
     }
 
     pub fn depth(&self) -> usize {
