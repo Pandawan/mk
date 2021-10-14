@@ -20,7 +20,7 @@ pub fn repl() {
         let readline = rl.readline(">> ");
         match readline {
             Ok(line) => {
-                if line == "exit" || line == "quit" {
+                if line.trim() == "exit" || line.trim() == "quit" {
                     break;
                 }
                 // Skip empty lines
@@ -41,7 +41,7 @@ pub fn repl() {
 
                         match result {
                             Ok(result_obj) => println!("{}", result_obj.to_code_string()),
-                            Err(result_err) => println!("{}", result_err),
+                            Err(result_err) => println!("Error: {}", result_err),
                         }
                     }
                     Err(errors) => {
