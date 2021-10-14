@@ -1,6 +1,7 @@
 use std::{fmt::Display, rc::Rc};
 
-use crate::object::{Object, RuntimeError};
+use crate::error::RuntimeError;
+use crate::object::Object;
 
 #[derive(Debug, PartialEq)]
 pub enum Builtin {

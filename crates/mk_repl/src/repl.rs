@@ -37,9 +37,12 @@ pub fn repl() {
                 match prog {
                     Ok(prog) => {
                         let mut e = Evaluator::new_with_env(Rc::clone(&env));
-                        let value = e.eval(prog);
+                        let result = e.eval(prog);
 
-                        println!("{}", value.to_code_string());
+                        match result {
+                            Ok(result_obj) => println!("{}", result_obj.to_code_string()),
+                            Err(result_err) => println!("{}", result_err),
+                        }
                     }
                     Err(errors) => {
                         println!("Parser errors:");

@@ -1,6 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::object::{Object, RuntimeError};
+use crate::error::RuntimeError;
+use crate::object::Object;
 
 #[derive(Debug, Clone)]
 pub struct Environment {
